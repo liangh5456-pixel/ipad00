@@ -341,13 +341,13 @@
         
         .time-slots-container {
             position: relative;
-            height: 480px;
+            height: 600px;
         }
         
         .time-slot-row {
             display: grid;
             grid-template-columns: 60px repeat(7, 1fr);
-            height: 40px;
+            height: 30px;
             border-bottom: 1px solid #f0f0f0;
         }
         
@@ -595,7 +595,7 @@
             gap: 8px;
         }
         
-        /* 歸還確認模態框樣式 */
+        /* 模態框樣式 */
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -725,11 +725,11 @@
             body * {
                 visibility: hidden;
             }
-            #appointment-detail-modal,
-            #appointment-detail-modal * {
+            .print-container,
+            .print-container * {
                 visibility: visible;
             }
-            #appointment-detail-modal {
+            .print-container {
                 position: absolute;
                 left: 0;
                 top: 0;
@@ -737,20 +737,63 @@
                 height: 100%;
                 background: white;
                 z-index: 9999;
-                display: flex !important;
-                justify-content: center;
-                align-items: flex-start;
+                display: block !important;
                 padding: 20px;
-            }
-            .modal-content {
-                box-shadow: none;
-                max-width: 100%;
-                max-height: 100%;
-                overflow: visible;
             }
             .buttons {
                 display: none !important;
             }
+        }
+        
+        /* 打印專用容器 */
+        .print-container {
+            display: none;
+        }
+        
+        .print-header {
+            text-align: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .print-details {
+            width: 100%;
+        }
+        
+        .print-detail-item {
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        
+        .print-label {
+            font-weight: bold;
+            width: 30%;
+        }
+        
+        .print-value {
+            width: 65%;
+        }
+        
+        .print-footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        /* 成功提示 */
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            text-align: center;
+            display: none;
         }
     </style>
 </head>
@@ -789,6 +832,9 @@
             <!-- 預約頁面 -->
             <div id="appointment-page" class="page">
                 <h2>iPad設備預約</h2>
+                <div class="success-message" id="success-message">
+                    預約成功！我們已收到您的預約申請。
+                </div>
                 <form id="appointment-form">
                     <div class="form-group">
                         <label for="applicant">申請人</label>
@@ -934,12 +980,14 @@
                 <div class="nav-tabs">
                     <div class="nav-tab active" data-tab="appointments">預約記錄</div>
                     <div class="nav-tab" data-tab="settings">系統設定</div>
+                    <div class="nav-tab" data-tab="password">修改密碼</div>
                     <div class="nav-tab" data-tab="qrcode">預約二維碼</div>
                 </div>
                 
                 <div class="tab-content active" id="appointments-tab">
                     <div class="admin-controls">
                         <button class="btn-primary" id="refresh-appointments">刷新數據</button>
+                        <button class="btn-danger" id="clear-all-appointments">清空所有記錄</button>
                         <button class="btn-secondary" id="back-to-home-admin">返回首頁</button>
                     </div>
                     
@@ -985,6 +1033,30 @@
                     </div>
                 </div>
                 
+                <div class="tab-content" id="password-tab">
+                    <div class="settings-group">
+                        <h3>修改管理員密碼</h3>
+                        <div class="form-group">
+                            <label for="current-password">當前密碼</label>
+                            <input type="password" id="current-password" placeholder="請輸入當前密碼" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="new-password">新密碼</label>
+                            <input type="password" id="new-password" placeholder="請輸入新密碼" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="confirm-password">確認新密碼</label>
+                            <input type="password" id="confirm-password" placeholder="請再次輸入新密碼" required>
+                        </div>
+                        
+                        <div class="buttons" style="margin-top: 15px;">
+                            <button class="btn-primary" id="change-password">修改密碼</button>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="tab-content" id="qrcode-tab">
                     <div class="qrcode-container">
                         <h3>掃描二維碼進行預約</h3>
@@ -1023,6 +1095,34 @@
         </div>
     </div>
 
+    <!-- 駁回確認模態框 -->
+    <div id="reject-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">駁回預約申請</div>
+                <button class="close-modal" id="close-reject-modal">×</button>
+            </div>
+            <div id="reject-modal-content">
+                <!-- 內容將通過JavaScript動態生成 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 打印專用容器 -->
+    <div class="print-container" id="print-container">
+        <div class="print-header">
+            <h1>iPad設備預約詳情</h1>
+            <p>預約系統打印憑證</p>
+        </div>
+        <div class="print-details" id="print-details">
+            <!-- 打印內容將通過JavaScript動態生成 -->
+        </div>
+        <div class="print-footer">
+            <p>打印時間: <span id="print-time"></span></p>
+            <p>請妥善保管此憑證</p>
+        </div>
+    </div>
+
     <script>
         // 系統設定
         let systemSettings = {
@@ -1031,6 +1131,9 @@
             adminPhone: ""
         };
         
+        // 管理員密碼
+        let adminPassword = localStorage.getItem('adminPassword') || 'ipadadmin';
+        
         // 當前查看的週次
         let currentWeekOffset = 0;
         let isAdminLoggedIn = localStorage.getItem('adminLoggedIn') === 'true';
@@ -1038,38 +1141,7 @@
         let logoutTimer;
         
         // 預約數據
-        let appointments = JSON.parse(localStorage.getItem('ipadAppointments')) || [
-            { 
-                id: 1, 
-                applicant: '張三', 
-                phone: '0912345678',
-                count: 2, 
-                startTime: '2023-11-15T09:00', 
-                endTime: '2023-11-15T11:30', 
-                purpose: '客戶演示', 
-                status: 'approved', 
-                color: '#3498db',
-                returned: false,
-                returnNotes: '',
-                returnChecks: {},
-                returnTime: null
-            },
-            { 
-                id: 2, 
-                applicant: '李四', 
-                phone: '0923456789',
-                count: 1, 
-                startTime: '2023-11-16T14:00', 
-                endTime: '2023-11-16T16:30', 
-                purpose: '外出會議', 
-                status: 'approved', 
-                color: '#e74c3c',
-                returned: false,
-                returnNotes: '',
-                returnChecks: {},
-                returnTime: null
-            }
-        ];
+        let appointments = JSON.parse(localStorage.getItem('ipadAppointments')) || [];
         
         // 保存數據到本地存儲
         function saveAppointments() {
@@ -1140,6 +1212,7 @@
         document.getElementById('go-to-appointment').addEventListener('click', function() {
             document.getElementById('home-page').classList.remove('active');
             document.getElementById('appointment-page').classList.add('active');
+            document.getElementById('success-message').style.display = 'none';
             updateLastActivityTime();
         });
         
@@ -1214,7 +1287,7 @@
             const password = document.getElementById('password').value;
             const loginError = document.getElementById('login-error');
             
-            if (username === 'admin' && password === 'ipadadmin') {
+            if (username === 'admin' && password === adminPassword) {
                 isAdminLoggedIn = true;
                 localStorage.setItem('adminLoggedIn', 'true');
                 updateLastActivityTime();
@@ -1241,7 +1314,7 @@
             }
         }
         
-        // 生成時間選項
+        // 生成時間選項 (08:00-18:00)
         function generateTimeOptions() {
             const startSelect = document.getElementById('start-time');
             const endSelect = document.getElementById('end-time');
@@ -1249,9 +1322,9 @@
             startSelect.innerHTML = '<option value="">請選擇開始時間</option>';
             endSelect.innerHTML = '<option value="">請選擇結束時間</option>';
             
-            for (let hour = 8; hour <= 20; hour++) {
+            for (let hour = 8; hour <= 18; hour++) {
                 for (let minute of [0, 10, 20, 30, 40, 50]) {
-                    if (hour === 20 && minute > 0) continue;
+                    if (hour === 18 && minute > 0) continue;
                     
                     const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
                     
@@ -1407,15 +1480,13 @@
             appointments.push(newAppointment);
             saveAppointments();
             
-            alert('預約提交成功！');
+            // 顯示成功消息
+            document.getElementById('success-message').style.display = 'block';
             document.getElementById('appointment-form').reset();
             document.getElementById('selected-time').textContent = '未選擇時間段';
             document.getElementById('conflict-warning').style.display = 'none';
             document.getElementById('advance-warning').style.display = 'none';
             
-            // 返回首頁
-            document.getElementById('appointment-page').classList.remove('active');
-            document.getElementById('home-page').classList.add('active');
             updateLastActivityTime();
         });
         
@@ -1446,7 +1517,7 @@
                         statusClass = 'status-approved';
                         break;
                     case 'rejected':
-                        statusText = '已拒絕';
+                        statusText = '已駁回';
                         statusClass = 'status-rejected';
                         break;
                 }
@@ -1456,6 +1527,10 @@
                     statusClass = 'status-returned';
                 }
                 
+                // 只有未歸還且不是已駁回的預約才顯示駁回按鈕
+                const rejectButton = (!appointment.returned && appointment.status !== 'rejected') ? 
+                    `<button class="btn-danger reject-btn" data-id="${appointment.id}">駁回</button>` : '';
+                
                 row.innerHTML = `
                     <td>${appointment.applicant}</td>
                     <td>${appointment.phone}</td>
@@ -1464,6 +1539,7 @@
                     <td><span class="status ${statusClass}">${statusText}</span></td>
                     <td>
                         <button class="btn-primary view-detail-btn" data-id="${appointment.id}">查看詳情</button>
+                        ${rejectButton}
                     </td>
                 `;
                 
@@ -1477,6 +1553,79 @@
                     showAppointmentDetail(id);
                     updateLastActivityTime();
                 });
+            });
+            
+            // 添加駁回按鈕事件
+            document.querySelectorAll('.reject-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const id = parseInt(this.getAttribute('data-id'));
+                    showRejectModal(id);
+                    updateLastActivityTime();
+                });
+            });
+        }
+        
+        // 顯示駁回確認模態框
+        function showRejectModal(id) {
+            const appointment = appointments.find(a => a.id === id);
+            if (!appointment) return;
+            
+            const modalContent = document.getElementById('reject-modal-content');
+            modalContent.innerHTML = `
+                <div class="appointment-details">
+                    <div class="detail-item">
+                        <div class="detail-label">申請人</div>
+                        <div class="detail-value">${appointment.applicant}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">iPad數量</div>
+                        <div class="detail-value">${appointment.count}台</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">預約時間</div>
+                        <div class="detail-value">${formatAppointmentTime(appointment.startTime, appointment.endTime)}</div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="reject-reason">駁回原因</label>
+                    <textarea id="reject-reason" rows="3" placeholder="請輸入駁回此預約的原因" required></textarea>
+                </div>
+                
+                <div class="buttons">
+                    <button class="btn-secondary" id="cancel-reject">取消</button>
+                    <button class="btn-danger" id="confirm-reject" data-id="${appointment.id}">確認駁回</button>
+                </div>
+            `;
+            
+            document.getElementById('reject-modal').style.display = 'flex';
+            
+            // 確認駁回按鈕事件
+            document.getElementById('confirm-reject').addEventListener('click', function() {
+                const appointmentId = parseInt(this.getAttribute('data-id'));
+                const appointmentIndex = appointments.findIndex(a => a.id === appointmentId);
+                const rejectReason = document.getElementById('reject-reason').value;
+                
+                if (appointmentIndex !== -1 && rejectReason.trim() !== '') {
+                    // 更新預約狀態為駁回
+                    appointments[appointmentIndex].status = 'rejected';
+                    appointments[appointmentIndex].rejectReason = rejectReason;
+                    
+                    saveAppointments();
+                    
+                    alert('預約已成功駁回！');
+                    document.getElementById('reject-modal').style.display = 'none';
+                    updateAppointmentsTable();
+                } else {
+                    alert('請填寫駁回原因');
+                }
+                updateLastActivityTime();
+            });
+            
+            // 取消駁回按鈕事件
+            document.getElementById('cancel-reject').addEventListener('click', function() {
+                document.getElementById('reject-modal').style.display = 'none';
+                updateLastActivityTime();
             });
         }
         
@@ -1507,6 +1656,17 @@
                 }
             }
             
+            // 駁回原因
+            let rejectReasonInfo = '';
+            if (appointment.status === 'rejected' && appointment.rejectReason) {
+                rejectReasonInfo = `
+                    <div class="detail-item">
+                        <div class="detail-label">駁回原因</div>
+                        <div class="detail-value">${appointment.rejectReason}</div>
+                    </div>
+                `;
+            }
+            
             modalContent.innerHTML = `
                 <div class="appointment-details">
                     <div class="detail-item">
@@ -1534,9 +1694,10 @@
                         <div class="detail-value">
                             ${appointment.returned ? '已歸還' : 
                               appointment.status === 'approved' ? '已批准' : 
-                              appointment.status === 'pending' ? '待審核' : '已拒絕'}
+                              appointment.status === 'pending' ? '待審核' : '已駁回'}
                         </div>
                     </div>
+                    ${rejectReasonInfo}
                     ${appointment.returned ? `
                     <div class="detail-item">
                         <div class="detail-label">歸還時間</div>
@@ -1551,7 +1712,7 @@
                 </div>
                 <div class="buttons" style="margin-top: 15px;">
                     <button class="btn-secondary" id="close-detail-modal">關閉</button>
-                    <button class="btn-print" id="print-detail">打印</button>
+                    <button class="btn-print" id="print-detail" data-id="${appointment.id}">打印</button>
                 </div>
             `;
             
@@ -1559,7 +1720,8 @@
             
             // 添加打印按鈕事件
             document.getElementById('print-detail').addEventListener('click', function() {
-                window.print();
+                const appointmentId = parseInt(this.getAttribute('data-id'));
+                printAppointmentDetail(appointmentId);
                 updateLastActivityTime();
             });
             
@@ -1568,6 +1730,100 @@
                 document.getElementById('appointment-detail-modal').style.display = 'none';
                 updateLastActivityTime();
             });
+        }
+        
+        // 打印預約詳情
+        function printAppointmentDetail(id) {
+            const appointment = appointments.find(a => a.id === id);
+            if (!appointment) return;
+            
+            // 更新打印內容
+            const printDetails = document.getElementById('print-details');
+            const printTime = document.getElementById('print-time');
+            
+            // 設置打印時間
+            printTime.textContent = new Date().toLocaleString();
+            
+            // 生成打印內容
+            let printContent = '';
+            
+            printContent += `
+                <div class="print-detail-item">
+                    <div class="print-label">申請人</div>
+                    <div class="print-value">${appointment.applicant}</div>
+                </div>
+                <div class="print-detail-item">
+                    <div class="print-label">聯繫電話</div>
+                    <div class="print-value">${appointment.phone}</div>
+                </div>
+                <div class="print-detail-item">
+                    <div class="print-label">iPad數量</div>
+                    <div class="print-value">${appointment.count}台</div>
+                </div>
+                <div class="print-detail-item">
+                    <div class="print-label">使用目的</div>
+                    <div class="print-value">${appointment.purpose}</div>
+                </div>
+                <div class="print-detail-item">
+                    <div class="print-label">預約時間</div>
+                    <div class="print-value">${formatAppointmentTime(appointment.startTime, appointment.endTime)}</div>
+                </div>
+                <div class="print-detail-item">
+                    <div class="print-label">狀態</div>
+                    <div class="print-value">
+                        ${appointment.returned ? '已歸還' : 
+                          appointment.status === 'approved' ? '已批准' : 
+                          appointment.status === 'pending' ? '待審核' : '已駁回'}
+                    </div>
+                </div>
+            `;
+            
+            if (appointment.status === 'rejected' && appointment.rejectReason) {
+                printContent += `
+                    <div class="print-detail-item">
+                        <div class="print-label">駁回原因</div>
+                        <div class="print-value">${appointment.rejectReason}</div>
+                    </div>
+                `;
+            }
+            
+            if (appointment.returned) {
+                printContent += `
+                    <div class="print-detail-item">
+                        <div class="print-label">歸還時間</div>
+                        <div class="print-value">${appointment.returnTime ? new Date(appointment.returnTime).toLocaleString() : '未記錄'}</div>
+                    </div>
+                    <div class="print-detail-item">
+                        <div class="print-label">歸還備註</div>
+                        <div class="print-value">${appointment.returnNotes || '無'}</div>
+                    </div>
+                `;
+                
+                if (appointment.returnChecks) {
+                    const checks = appointment.returnChecks;
+                    const checkedItems = [];
+                    
+                    if (checks.deviceCount) checkedItems.push('設備數量正確');
+                    if (checks.deviceCondition) checkedItems.push('設備外觀完好');
+                    if (checks.accessories) checkedItems.push('配件齊全');
+                    
+                    if (checkedItems.length > 0) {
+                        printContent += `
+                            <div class="print-detail-item">
+                                <div class="print-label">歸還檢查項目</div>
+                                <div class="print-value">${checkedItems.join('、')}</div>
+                            </div>
+                        `;
+                    }
+                }
+            }
+            
+            printDetails.innerHTML = printContent;
+            
+            // 顯示打印容器並觸發打印
+            document.getElementById('print-container').style.display = 'block';
+            window.print();
+            document.getElementById('print-container').style.display = 'none';
         }
         
         // 格式化預約時間顯示
@@ -1746,13 +2002,13 @@
                 scheduleHeader.appendChild(headerCell);
             }
             
-            // 生成時間段
+            // 生成時間段 (08:00-18:00)
             const timeSlotsContainer = document.getElementById('time-slots-container');
             timeSlotsContainer.innerHTML = '';
             
-            for (let hour = 8; hour <= 20; hour++) {
+            for (let hour = 8; hour <= 18; hour++) {
                 for (let minute of [0, 30]) {
-                    if (hour === 20 && minute === 30) continue;
+                    if (hour === 18 && minute === 30) continue;
                     
                     const timeSlotRow = document.createElement('div');
                     timeSlotRow.className = 'time-slot-row';
@@ -1798,8 +2054,8 @@
                 const startMinutes = startTime.getHours() * 60 + startTime.getMinutes();
                 const endMinutes = endTime.getHours() * 60 + endTime.getMinutes();
                 
-                const top = ((startMinutes - 8 * 60) / 30) * 20;
-                const height = ((endMinutes - startMinutes) / 30) * 20;
+                const top = ((startMinutes - 8 * 60) / 30) * 30;
+                const height = ((endMinutes - startMinutes) / 30) * 30;
                 
                 // 創建預約塊
                 const appointmentBlock = document.createElement('div');
@@ -1913,6 +2169,65 @@
             
             saveSettings();
             alert('系統設定已保存！');
+            
+            // 更新日期輸入的最小值
+            updateDateInputMin();
+            updateLastActivityTime();
+        });
+        
+        // 更新日期輸入的最小值
+        function updateDateInputMin() {
+            const today = new Date();
+            const minDate = new Date(today);
+            minDate.setDate(today.getDate() + systemSettings.advanceDays);
+            
+            const startDateInput = document.getElementById('start-date');
+            const endDateInput = document.getElementById('end-date');
+            
+            startDateInput.min = minDate.toISOString().split('T')[0];
+            endDateInput.min = minDate.toISOString().split('T')[0];
+        }
+        
+        // 修改密碼
+        document.getElementById('change-password').addEventListener('click', function() {
+            const currentPassword = document.getElementById('current-password').value;
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            
+            if (currentPassword !== adminPassword) {
+                alert('當前密碼錯誤！');
+                return;
+            }
+            
+            if (newPassword !== confirmPassword) {
+                alert('新密碼與確認密碼不一致！');
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                alert('新密碼長度至少需要6位！');
+                return;
+            }
+            
+            adminPassword = newPassword;
+            localStorage.setItem('adminPassword', adminPassword);
+            
+            alert('密碼修改成功！');
+            document.getElementById('current-password').value = '';
+            document.getElementById('new-password').value = '';
+            document.getElementById('confirm-password').value = '';
+            
+            updateLastActivityTime();
+        });
+        
+        // 清空所有預約記錄
+        document.getElementById('clear-all-appointments').addEventListener('click', function() {
+            if (confirm('確定要清空所有預約記錄嗎？此操作無法撤銷！')) {
+                appointments = [];
+                saveAppointments();
+                updateAppointmentsTable();
+                alert('所有預約記錄已清空！');
+            }
             updateLastActivityTime();
         });
         
@@ -1934,6 +2249,11 @@
             updateLastActivityTime();
         });
         
+        document.getElementById('close-reject-modal').addEventListener('click', function() {
+            document.getElementById('reject-modal').style.display = 'none';
+            updateLastActivityTime();
+        });
+        
         // 點擊模態框外部關閉模態框
         window.addEventListener('click', function(event) {
             if (event.target === document.getElementById('return-modal')) {
@@ -1942,6 +2262,10 @@
             }
             if (event.target === document.getElementById('appointment-detail-modal')) {
                 document.getElementById('appointment-detail-modal').style.display = 'none';
+                updateLastActivityTime();
+            }
+            if (event.target === document.getElementById('reject-modal')) {
+                document.getElementById('reject-modal').style.display = 'none';
                 updateLastActivityTime();
             }
         });
@@ -1966,15 +2290,7 @@
             }
             
             // 設置日期輸入的最小值
-            const today = new Date();
-            const minDate = new Date(today);
-            minDate.setDate(today.getDate() + systemSettings.advanceDays);
-            
-            const startDateInput = document.getElementById('start-date');
-            const endDateInput = document.getElementById('end-date');
-            
-            startDateInput.min = minDate.toISOString().split('T')[0];
-            endDateInput.min = minDate.toISOString().split('T')[0];
+            updateDateInputMin();
             
             // 添加日期和時間變更事件監聽器
             document.getElementById('start-date').addEventListener('change', updateSelectedTimeDisplay);
@@ -1984,7 +2300,7 @@
             
             // 設置開始日期變更時更新結束日期的最小值
             document.getElementById('start-date').addEventListener('change', function() {
-                endDateInput.min = this.value;
+                document.getElementById('end-date').min = this.value;
                 updateLastActivityTime();
             });
         }
