@@ -686,6 +686,45 @@
             color: #555;
         }
         
+        /* 分頁樣式 */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 15px;
+            gap: 10px;
+        }
+        
+        .pagination-btn {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .pagination-btn:hover {
+            background: #f0f0f0;
+        }
+        
+        .pagination-btn.active {
+            background: #3498db;
+            color: white;
+            border-color: #3498db;
+        }
+        
+        .pagination-btn.disabled {
+            background: #f8f9fa;
+            color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .pagination-info {
+            font-size: 12px;
+            color: #666;
+        }
+        
         /* 手機適配 */
         @media (max-width: 480px) {
             .time-inputs {
@@ -717,6 +756,10 @@
             
             .return-actions {
                 flex-direction: column;
+            }
+            
+            .pagination {
+                flex-wrap: wrap;
             }
         }
         
@@ -987,7 +1030,6 @@
                 <div class="tab-content active" id="appointments-tab">
                     <div class="admin-controls">
                         <button class="btn-primary" id="refresh-appointments">刷新數據</button>
-                        <button class="btn-danger" id="clear-all-appointments">清空所有記錄</button>
                         <button class="btn-secondary" id="back-to-home-admin">返回首頁</button>
                     </div>
                     
@@ -1006,6 +1048,15 @@
                             <!-- 預約數據將通過JavaScript動態添加 -->
                         </tbody>
                     </table>
+                    
+                    <!-- 分頁控件 -->
+                    <div class="pagination" id="pagination">
+                        <button class="pagination-btn" id="first-page">首頁</button>
+                        <button class="pagination-btn" id="prev-page">上一頁</button>
+                        <span class="pagination-info" id="page-info">第 1 頁，共 1 頁</span>
+                        <button class="pagination-btn" id="next-page">下一頁</button>
+                        <button class="pagination-btn" id="last-page">末頁</button>
+                    </div>
                 </div>
                 
                 <div class="tab-content" id="settings-tab">
@@ -1142,6 +1193,10 @@
         
         // 預約數據
         let appointments = JSON.parse(localStorage.getItem('ipadAppointments')) || [];
+        
+        // 分頁相關變量
+        let currentPage = 1;
+        const itemsPerPage = 5; // 每頁顯示5條記錄
         
         // 保存數據到本地存儲
         function saveAppointments() {
@@ -1496,12 +1551,27 @@
             return colors[Math.floor(Math.random() * colors.length)];
         }
         
-        // 更新預約表格
+        // 更新預約表格（帶分頁功能）
         function updateAppointmentsTable() {
             const tbody = document.querySelector('#appointments-table tbody');
             tbody.innerHTML = '';
             
-            appointments.forEach(appointment => {
+            // 計算總頁數
+            const totalPages = Math.ceil(appointments.length / itemsPerPage);
+            
+            // 確保當前頁在有效範圍內
+            if (currentPage > totalPages && totalPages > 0) {
+                currentPage = totalPages;
+            } else if (currentPage < 1) {
+                currentPage = 1;
+            }
+            
+            // 計算當前頁的數據範圍
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = Math.min(startIndex + itemsPerPage, appointments.length);
+            const currentAppointments = appointments.slice(startIndex, endIndex);
+            
+            currentAppointments.forEach(appointment => {
                 const row = document.createElement('tr');
                 
                 // 狀態顯示
@@ -1546,6 +1616,9 @@
                 tbody.appendChild(row);
             });
             
+            // 更新分頁信息
+            updatePaginationInfo(totalPages);
+            
             // 添加查看詳情按鈕事件
             document.querySelectorAll('.view-detail-btn').forEach(button => {
                 button.addEventListener('click', function() {
@@ -1564,6 +1637,84 @@
                 });
             });
         }
+        
+        // 更新分頁信息
+        function updatePaginationInfo(totalPages) {
+            const pageInfo = document.getElementById('page-info');
+            const firstPageBtn = document.getElementById('first-page');
+            const prevPageBtn = document.getElementById('prev-page');
+            const nextPageBtn = document.getElementById('next-page');
+            const lastPageBtn = document.getElementById('last-page');
+            
+            // 更新頁面信息
+            pageInfo.textContent = `第 ${currentPage} 頁，共 ${totalPages || 1} 頁`;
+            
+            // 更新按鈕狀態
+            firstPageBtn.disabled = currentPage === 1;
+            prevPageBtn.disabled = currentPage === 1;
+            nextPageBtn.disabled = currentPage === totalPages || totalPages === 0;
+            lastPageBtn.disabled = currentPage === totalPages || totalPages === 0;
+            
+            // 添加禁用類
+            if (firstPageBtn.disabled) {
+                firstPageBtn.classList.add('disabled');
+            } else {
+                firstPageBtn.classList.remove('disabled');
+            }
+            
+            if (prevPageBtn.disabled) {
+                prevPageBtn.classList.add('disabled');
+            } else {
+                prevPageBtn.classList.remove('disabled');
+            }
+            
+            if (nextPageBtn.disabled) {
+                nextPageBtn.classList.add('disabled');
+            } else {
+                nextPageBtn.classList.remove('disabled');
+            }
+            
+            if (lastPageBtn.disabled) {
+                lastPageBtn.classList.add('disabled');
+            } else {
+                lastPageBtn.classList.remove('disabled');
+            }
+        }
+        
+        // 分頁按鈕事件
+        document.getElementById('first-page').addEventListener('click', function() {
+            if (currentPage > 1) {
+                currentPage = 1;
+                updateAppointmentsTable();
+            }
+            updateLastActivityTime();
+        });
+        
+        document.getElementById('prev-page').addEventListener('click', function() {
+            if (currentPage > 1) {
+                currentPage--;
+                updateAppointmentsTable();
+            }
+            updateLastActivityTime();
+        });
+        
+        document.getElementById('next-page').addEventListener('click', function() {
+            const totalPages = Math.ceil(appointments.length / itemsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                updateAppointmentsTable();
+            }
+            updateLastActivityTime();
+        });
+        
+        document.getElementById('last-page').addEventListener('click', function() {
+            const totalPages = Math.ceil(appointments.length / itemsPerPage);
+            if (currentPage < totalPages) {
+                currentPage = totalPages;
+                updateAppointmentsTable();
+            }
+            updateLastActivityTime();
+        });
         
         // 顯示駁回確認模態框
         function showRejectModal(id) {
