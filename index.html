@@ -2220,17 +2220,6 @@
             updateLastActivityTime();
         });
         
-        // 清空所有預約記錄
-        document.getElementById('clear-all-appointments').addEventListener('click', function() {
-            if (confirm('確定要清空所有預約記錄嗎？此操作無法撤銷！')) {
-                appointments = [];
-                saveAppointments();
-                updateAppointmentsTable();
-                alert('所有預約記錄已清空！');
-            }
-            updateLastActivityTime();
-        });
-        
         // 刷新預約數據
         document.getElementById('refresh-appointments').addEventListener('click', function() {
             updateAppointmentsTable();
