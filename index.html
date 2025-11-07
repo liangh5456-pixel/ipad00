@@ -6,6 +6,7 @@
     <title>iPad設備預約系統</title>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     <style>
+        /* 原有的CSS样式保持不变 */
         * {
             margin: 0;
             padding: 0;
@@ -686,45 +687,6 @@
             color: #555;
         }
         
-        /* 分頁樣式 */
-        .pagination {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin-top: 15px;
-            gap: 10px;
-        }
-        
-        .pagination-btn {
-            padding: 6px 12px;
-            border: 1px solid #ddd;
-            background: white;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        .pagination-btn:hover {
-            background: #f0f0f0;
-        }
-        
-        .pagination-btn.active {
-            background: #3498db;
-            color: white;
-            border-color: #3498db;
-        }
-        
-        .pagination-btn.disabled {
-            background: #f8f9fa;
-            color: #6c757d;
-            cursor: not-allowed;
-        }
-        
-        .pagination-info {
-            font-size: 12px;
-            color: #666;
-        }
-        
         /* 手機適配 */
         @media (max-width: 480px) {
             .time-inputs {
@@ -756,10 +718,6 @@
             
             .return-actions {
                 flex-direction: column;
-            }
-            
-            .pagination {
-                flex-wrap: wrap;
             }
         }
         
@@ -837,6 +795,37 @@
             margin-bottom: 15px;
             text-align: center;
             display: none;
+        }
+        
+        /* 加載指示器 */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            color: white;
+            font-size: 18px;
         }
     </style>
 </head>
@@ -1030,6 +1019,7 @@
                 <div class="tab-content active" id="appointments-tab">
                     <div class="admin-controls">
                         <button class="btn-primary" id="refresh-appointments">刷新數據</button>
+                        <button class="btn-danger" id="clear-all-appointments">清空所有記錄</button>
                         <button class="btn-secondary" id="back-to-home-admin">返回首頁</button>
                     </div>
                     
@@ -1048,15 +1038,6 @@
                             <!-- 預約數據將通過JavaScript動態添加 -->
                         </tbody>
                     </table>
-                    
-                    <!-- 分頁控件 -->
-                    <div class="pagination" id="pagination">
-                        <button class="pagination-btn" id="first-page">首頁</button>
-                        <button class="pagination-btn" id="prev-page">上一頁</button>
-                        <span class="pagination-info" id="page-info">第 1 頁，共 1 頁</span>
-                        <button class="pagination-btn" id="next-page">下一頁</button>
-                        <button class="pagination-btn" id="last-page">末頁</button>
-                    </div>
                 </div>
                 
                 <div class="tab-content" id="settings-tab">
@@ -1174,7 +1155,16 @@
         </div>
     </div>
 
+    <!-- 加載指示器 -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading"></div>
+        <span>正在加載數據...</span>
+    </div>
+
     <script>
+        // Google Sheets API 配置
+        const SCRIPT_URL = 'https://script.google.com/macros/s/YOUR_GOOGLE_APPS_SCRIPT_ID/exec'; // 請替換為您的Google Apps Script部署ID
+        
         // 系統設定
         let systemSettings = {
             enableApproval: false,
@@ -1192,30 +1182,48 @@
         let logoutTimer;
         
         // 預約數據
-        let appointments = JSON.parse(localStorage.getItem('ipadAppointments')) || [];
+        let appointments = [];
         
-        // 分頁相關變量
-        let currentPage = 1;
-        const itemsPerPage = 5; // 每頁顯示5條記錄
-        
-        // 保存數據到本地存儲
-        function saveAppointments() {
-            localStorage.setItem('ipadAppointments', JSON.stringify(appointments));
+        // 顯示加載指示器
+        function showLoading() {
+            document.getElementById('loading-overlay').style.display = 'flex';
         }
         
-        // 加載系統設定
-        function loadSettings() {
-            const savedSettings = localStorage.getItem('ipadSystemSettings');
-            if (savedSettings) {
-                systemSettings = JSON.parse(savedSettings);
-                document.getElementById('advance-days').value = systemSettings.advanceDays;
-                document.getElementById('admin-phone').value = systemSettings.adminPhone || '';
+        // 隱藏加載指示器
+        function hideLoading() {
+            document.getElementById('loading-overlay').style.display = 'none';
+        }
+        
+        // 初始化函數
+        function init() {
+            // 檢查是否需要自動登出（30分鐘無操作）
+            const currentTime = Date.now();
+            if (currentTime - lastActivityTime > 30 * 60 * 1000) {
+                isAdminLoggedIn = false;
+                localStorage.setItem('adminLoggedIn', 'false');
             }
-        }
-        
-        // 保存系統設定
-        function saveSettings() {
-            localStorage.setItem('ipadSystemSettings', JSON.stringify(systemSettings));
+            updateLastActivityTime();
+            
+            // 初始化頁面導航
+            initNavigation();
+            
+            // 初始化表單
+            initForm();
+            
+            // 初始化時間選擇器
+            initTimeSelector();
+            
+            // 初始化管理員鏈接
+            initAdminLink();
+            
+            // 加載系統設定
+            loadSettings();
+            
+            // 加載預約數據
+            loadAppointments();
+            
+            // 設置定時器檢查登出
+            startLogoutTimer();
         }
         
         // 更新最後活動時間
@@ -1224,601 +1232,784 @@
             localStorage.setItem('lastActivityTime', lastActivityTime.toString());
         }
         
-        // 檢查登入狀態
-        function checkLoginStatus() {
-            const currentTime = Date.now();
-            const timeDiff = currentTime - lastActivityTime;
-            const thirtyMinutes = 30 * 60 * 1000; // 30分鐘
-            
-            if (timeDiff > thirtyMinutes) {
-                // 超過30分鐘無活動，自動登出
-                isAdminLoggedIn = false;
-                localStorage.setItem('adminLoggedIn', 'false');
-            } else {
-                // 更新活動時間
-                updateLastActivityTime();
-            }
-        }
-        
-        // 設置自動登出計時器
-        function setupAutoLogout() {
-            // 清除現有計時器
-            if (logoutTimer) {
-                clearTimeout(logoutTimer);
-            }
-            
-            // 設置新的計時器（30分鐘後自動登出）
+        // 開始登出計時器
+        function startLogoutTimer() {
+            clearTimeout(logoutTimer);
             logoutTimer = setTimeout(() => {
-                isAdminLoggedIn = false;
-                localStorage.setItem('adminLoggedIn', 'false');
-                alert('由於長時間無操作，您已自動登出管理員帳號。');
-                
-                // 如果當前在管理頁面，返回首頁
-                if (document.getElementById('admin-page').classList.contains('active') || 
-                    document.getElementById('return-page').classList.contains('active')) {
-                    document.getElementById('admin-page').classList.remove('active');
-                    document.getElementById('return-page').classList.remove('active');
-                    document.getElementById('home-page').classList.add('active');
+                if (isAdminLoggedIn) {
+                    logout();
                 }
             }, 30 * 60 * 1000); // 30分鐘
         }
         
-        // 頁面切換邏輯
-        document.getElementById('go-to-appointment').addEventListener('click', function() {
-            document.getElementById('home-page').classList.remove('active');
-            document.getElementById('appointment-page').classList.add('active');
-            document.getElementById('success-message').style.display = 'none';
-            updateLastActivityTime();
-        });
+        // 登出
+        function logout() {
+            isAdminLoggedIn = false;
+            localStorage.setItem('adminLoggedIn', 'false');
+            alert('由於長時間無操作，您已自動登出。');
+            showPage('home-page');
+        }
         
-        document.getElementById('go-to-schedule').addEventListener('click', function() {
-            document.getElementById('home-page').classList.remove('active');
-            document.getElementById('schedule-page').classList.add('active');
-            updateScheduleView();
-            updateLastActivityTime();
-        });
-        
-        document.getElementById('go-to-return').addEventListener('click', function() {
-            // 檢查是否已登入管理員
-            if (!isAdminLoggedIn) {
-                document.getElementById('home-page').classList.remove('active');
-                document.getElementById('login-page').classList.add('active');
-            } else {
-                document.getElementById('home-page').classList.remove('active');
-                document.getElementById('return-page').classList.add('active');
-                updateReturnList();
-            }
-            updateLastActivityTime();
-        });
-        
-        document.getElementById('back-to-home').addEventListener('click', function() {
-            document.getElementById('appointment-page').classList.remove('active');
-            document.getElementById('home-page').classList.add('active');
-            updateLastActivityTime();
-        });
-        
-        document.getElementById('back-to-home-from-schedule').addEventListener('click', function() {
-            document.getElementById('schedule-page').classList.remove('active');
-            document.getElementById('home-page').classList.add('active');
-            updateLastActivityTime();
-        });
-        
-        document.getElementById('back-to-home-from-return').addEventListener('click', function() {
-            document.getElementById('return-page').classList.remove('active');
-            document.getElementById('home-page').classList.add('active');
-            updateLastActivityTime();
-        });
-        
-        document.getElementById('back-to-home-from-login').addEventListener('click', function() {
-            document.getElementById('login-page').classList.remove('active');
-            document.getElementById('home-page').classList.add('active');
-            updateLastActivityTime();
-        });
-        
-        document.getElementById('back-to-home-admin').addEventListener('click', function() {
-            document.getElementById('admin-page').classList.remove('active');
-            document.getElementById('home-page').classList.add('active');
-            updateLastActivityTime();
-        });
-        
-        document.getElementById('admin-link').addEventListener('click', function(e) {
-            e.preventDefault();
-            if (isAdminLoggedIn) {
-                document.getElementById('home-page').classList.remove('active');
-                document.getElementById('admin-page').classList.add('active');
-                updateAppointmentsTable();
-            } else {
-                document.getElementById('home-page').classList.remove('active');
-                document.getElementById('login-page').classList.add('active');
-            }
-            updateLastActivityTime();
-        });
-
-        // 登入表單提交
-        document.getElementById('login-form').addEventListener('submit', function(e) {
-            e.preventDefault();
+        // 初始化頁面導航
+        function initNavigation() {
+            // 首頁按鈕
+            document.getElementById('go-to-appointment').addEventListener('click', () => showPage('appointment-page'));
+            document.getElementById('go-to-schedule').addEventListener('click', () => {
+                currentWeekOffset = 0;
+                renderSchedule();
+                showPage('schedule-page');
+            });
+            document.getElementById('go-to-return').addEventListener('click', () => {
+                renderReturnList();
+                showPage('return-page');
+            });
             
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const loginError = document.getElementById('login-error');
+            // 返回首頁按鈕
+            document.getElementById('back-to-home').addEventListener('click', () => showPage('home-page'));
+            document.getElementById('back-to-home-from-schedule').addEventListener('click', () => showPage('home-page'));
+            document.getElementById('back-to-home-from-return').addEventListener('click', () => showPage('home-page'));
+            document.getElementById('back-to-home-from-login').addEventListener('click', () => showPage('home-page'));
+            document.getElementById('back-to-home-admin').addEventListener('click', () => showPage('home-page'));
             
-            if (username === 'admin' && password === adminPassword) {
-                isAdminLoggedIn = true;
-                localStorage.setItem('adminLoggedIn', 'true');
-                updateLastActivityTime();
-                setupAutoLogout();
-                
-                document.getElementById('login-page').classList.remove('active');
-                document.getElementById('admin-page').classList.add('active');
-                loginError.style.display = 'none';
-                updateAppointmentsTable();
-            } else {
-                loginError.style.display = 'block';
-            }
-            updateLastActivityTime();
-        });
-
-        // 生成iPad數量選項
-        function generateIpadCountOptions() {
-            const select = document.getElementById('ipad-count');
+            // 週次導航
+            document.getElementById('prev-week').addEventListener('click', () => {
+                currentWeekOffset--;
+                renderSchedule();
+            });
+            document.getElementById('next-week').addEventListener('click', () => {
+                currentWeekOffset++;
+                renderSchedule();
+            });
+            
+            // 管理員登入
+            document.getElementById('login-form').addEventListener('submit', handleLogin);
+            
+            // 管理頁面標籤切換
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const tabId = tab.getAttribute('data-tab');
+                    switchTab(tabId);
+                });
+            });
+            
+            // 管理頁面操作
+            document.getElementById('refresh-appointments').addEventListener('click', loadAppointments);
+            document.getElementById('clear-all-appointments').addEventListener('click', clearAllAppointments);
+            document.getElementById('save-settings').addEventListener('click', saveSettings);
+            document.getElementById('change-password').addEventListener('click', changePassword);
+            document.getElementById('back-from-qrcode').addEventListener('click', () => switchTab('appointments'));
+            
+            // 模態框關閉按鈕
+            document.getElementById('close-return-modal').addEventListener('click', () => {
+                document.getElementById('return-modal').style.display = 'none';
+            });
+            document.getElementById('close-appointment-detail-modal').addEventListener('click', () => {
+                document.getElementById('appointment-detail-modal').style.display = 'none';
+            });
+            document.getElementById('close-reject-modal').addEventListener('click', () => {
+                document.getElementById('reject-modal').style.display = 'none';
+            });
+            
+            // 點擊模態框外部關閉
+            document.getElementById('return-modal').addEventListener('click', (e) => {
+                if (e.target === document.getElementById('return-modal')) {
+                    document.getElementById('return-modal').style.display = 'none';
+                }
+            });
+            document.getElementById('appointment-detail-modal').addEventListener('click', (e) => {
+                if (e.target === document.getElementById('appointment-detail-modal')) {
+                    document.getElementById('appointment-detail-modal').style.display = 'none';
+                }
+            });
+            document.getElementById('reject-modal').addEventListener('click', (e) => {
+                if (e.target === document.getElementById('reject-modal')) {
+                    document.getElementById('reject-modal').style.display = 'none';
+                }
+            });
+        }
+        
+        // 初始化管理員鏈接
+        function initAdminLink() {
+            const adminLink = document.getElementById('admin-link');
+            adminLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (isAdminLoggedIn) {
+                    showPage('admin-page');
+                    loadAppointments();
+                } else {
+                    showPage('login-page');
+                }
+            });
+        }
+        
+        // 初始化表單
+        function initForm() {
+            // 生成iPad數量選項
+            const ipadCountSelect = document.getElementById('ipad-count');
             for (let i = 1; i <= 48; i++) {
                 const option = document.createElement('option');
                 option.value = i;
-                option.textContent = `${i}台`;
-                select.appendChild(option);
+                option.textContent = i + ' 台';
+                ipadCountSelect.appendChild(option);
             }
+            
+            // 設置日期最小值為今天
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('start-date').min = today;
+            document.getElementById('end-date').min = today;
+            
+            // 表單提交事件
+            document.getElementById('appointment-form').addEventListener('submit', handleAppointmentSubmit);
+            
+            // 日期和時間變化事件
+            document.getElementById('start-date').addEventListener('change', updateTimeSelection);
+            document.getElementById('end-date').addEventListener('change', updateTimeSelection);
+            document.getElementById('start-time').addEventListener('change', updateSelectedTime);
+            document.getElementById('end-time').addEventListener('change', updateSelectedTime);
         }
         
-        // 生成時間選項 (08:00-18:00)
-        function generateTimeOptions() {
-            const startSelect = document.getElementById('start-time');
-            const endSelect = document.getElementById('end-time');
+        // 初始化時間選擇器
+        function initTimeSelector() {
+            const startTimeSelect = document.getElementById('start-time');
+            const endTimeSelect = document.getElementById('end-time');
             
-            startSelect.innerHTML = '<option value="">請選擇開始時間</option>';
-            endSelect.innerHTML = '<option value="">請選擇結束時間</option>';
+            // 清空現有選項
+            startTimeSelect.innerHTML = '<option value="">請選擇開始時間</option>';
+            endTimeSelect.innerHTML = '<option value="">請選擇結束時間</option>';
             
-            for (let hour = 8; hour <= 18; hour++) {
-                for (let minute of [0, 10, 20, 30, 40, 50]) {
-                    if (hour === 18 && minute > 0) continue;
-                    
+            // 生成時間選項（從8:00到22:00，每30分鐘一個選項）
+            for (let hour = 8; hour <= 22; hour++) {
+                for (let minute = 0; minute < 60; minute += 30) {
                     const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
                     
                     const startOption = document.createElement('option');
                     startOption.value = timeString;
                     startOption.textContent = timeString;
-                    startSelect.appendChild(startOption);
+                    startTimeSelect.appendChild(startOption);
                     
                     const endOption = document.createElement('option');
                     endOption.value = timeString;
                     endOption.textContent = timeString;
-                    endSelect.appendChild(endOption);
+                    endTimeSelect.appendChild(endOption);
                 }
             }
         }
         
-        // 檢查時間衝突
-        function checkTimeConflict(startDate, startTime, endDate, endTime) {
-            const startDateTime = new Date(`${startDate}T${startTime}`);
-            const endDateTime = new Date(`${endDate}T${endTime}`);
+        // 更新時間選擇
+        function updateTimeSelection() {
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
             
-            if (startDateTime >= endDateTime) {
-                return { conflict: true, message: '結束時間必須晚於開始時間' };
+            // 如果結束日期早於開始日期，自動調整
+            if (endDate && startDate && endDate < startDate) {
+                document.getElementById('end-date').value = startDate;
             }
             
-            // 檢查是否與現有預約衝突
-            for (const appointment of appointments) {
-                if (appointment.status !== 'approved') continue;
-                
-                const appStart = new Date(appointment.startTime);
-                const appEnd = new Date(appointment.endTime);
-                
-                if ((startDateTime >= appStart && startDateTime < appEnd) ||
-                    (endDateTime > appStart && endDateTime <= appEnd) ||
-                    (startDateTime <= appStart && endDateTime >= appEnd)) {
-                    return { 
-                        conflict: true, 
-                        message: `與 ${appointment.applicant} 的預約時段衝突 (${appointment.startTime.split('T')[0]} ${appointment.startTime.split('T')[1]} - ${appointment.endTime.split('T')[1]})` 
-                    };
-                }
-            }
+            // 檢查提前預約限制
+            checkAdvanceBooking();
             
-            return { conflict: false, message: '' };
+            // 更新已選時間顯示
+            updateSelectedTime();
         }
         
-        // 檢查提前預約規則
-        function checkAdvanceBooking(startDate) {
+        // 檢查提前預約限制
+        function checkAdvanceBooking() {
+            const startDate = document.getElementById('start-date').value;
+            const advanceWarning = document.getElementById('advance-warning');
+            
+            if (!startDate) {
+                advanceWarning.style.display = 'none';
+                return;
+            }
+            
             const today = new Date();
             const start = new Date(startDate);
             const diffTime = start - today;
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             
             if (diffDays < systemSettings.advanceDays) {
-                return { 
-                    warning: true, 
-                    message: `您必須提前 ${systemSettings.advanceDays} 天預約，請選擇 ${systemSettings.advanceDays} 天後的日期` 
-                };
+                advanceWarning.textContent = `注意：您只能預約${systemSettings.advanceDays}天後的日期，請重新選擇。`;
+                advanceWarning.style.display = 'block';
+                document.getElementById('submit-btn').disabled = true;
+                document.getElementById('submit-btn').classList.add('btn-disabled');
+            } else {
+                advanceWarning.style.display = 'none';
+                document.getElementById('submit-btn').disabled = false;
+                document.getElementById('submit-btn').classList.remove('btn-disabled');
             }
-            
-            return { warning: false, message: '' };
         }
         
-        // 更新選擇的時間顯示
-        function updateSelectedTimeDisplay() {
+        // 更新已選時間顯示
+        function updateSelectedTime() {
             const startDate = document.getElementById('start-date').value;
             const startTime = document.getElementById('start-time').value;
             const endDate = document.getElementById('end-date').value;
             const endTime = document.getElementById('end-time').value;
             
-            const selectedTimeDiv = document.getElementById('selected-time');
-            const conflictWarning = document.getElementById('conflict-warning');
-            const advanceWarning = document.getElementById('advance-warning');
+            const selectedTimeElement = document.getElementById('selected-time');
             
             if (startDate && startTime && endDate && endTime) {
-                selectedTimeDiv.textContent = `${startDate} ${startTime} - ${endDate} ${endTime}`;
+                selectedTimeElement.textContent = `已選擇: ${startDate} ${startTime} 至 ${endDate} ${endTime}`;
                 
                 // 檢查時間衝突
-                const conflictResult = checkTimeConflict(startDate, startTime, endDate, endTime);
-                if (conflictResult.conflict) {
-                    conflictWarning.textContent = conflictResult.message;
-                    conflictWarning.style.display = 'block';
-                } else {
-                    conflictWarning.style.display = 'none';
-                }
-                
-                // 檢查提前預約
-                const advanceResult = checkAdvanceBooking(startDate);
-                if (advanceResult.warning) {
-                    advanceWarning.textContent = advanceResult.message;
-                    advanceWarning.style.display = 'block';
-                } else {
-                    advanceWarning.style.display = 'none';
-                }
+                checkTimeConflict();
             } else {
-                selectedTimeDiv.textContent = '未選擇時間段';
-                conflictWarning.style.display = 'none';
-                advanceWarning.style.display = 'none';
+                selectedTimeElement.textContent = '未選擇時間段';
             }
-            updateLastActivityTime();
         }
         
-        // 預約表單提交
-        document.getElementById('appointment-form').addEventListener('submit', function(e) {
+        // 檢查時間衝突
+        function checkTimeConflict() {
+            const startDate = document.getElementById('start-date').value;
+            const startTime = document.getElementById('start-time').value;
+            const endDate = document.getElementById('end-date').value;
+            const endTime = document.getElementById('end-time').value;
+            const ipadCount = parseInt(document.getElementById('ipad-count').value);
+            
+            if (!startDate || !startTime || !endDate || !endTime || !ipadCount) {
+                return;
+            }
+            
+            const startDateTime = new Date(`${startDate}T${startTime}`);
+            const endDateTime = new Date(`${endDate}T${endTime}`);
+            
+            // 檢查時間是否有效
+            if (endDateTime <= startDateTime) {
+                document.getElementById('conflict-warning').textContent = '錯誤：結束時間必須晚於開始時間';
+                document.getElementById('conflict-warning').style.display = 'block';
+                document.getElementById('submit-btn').disabled = true;
+                document.getElementById('submit-btn').classList.add('btn-disabled');
+                return;
+            }
+            
+            // 檢查總時長是否超過限制（例如24小時）
+            const durationHours = (endDateTime - startDateTime) / (1000 * 60 * 60);
+            if (durationHours > 24) {
+                document.getElementById('conflict-warning').textContent = '錯誤：單次預約時長不能超過24小時';
+                document.getElementById('conflict-warning').style.display = 'block';
+                document.getElementById('submit-btn').disabled = true;
+                document.getElementById('submit-btn').classList.add('btn-disabled');
+                return;
+            }
+            
+            // 檢查與現有預約的衝突
+            let totalRequested = ipadCount;
+            
+            for (const appointment of appointments) {
+                if (appointment.status === 'rejected' || appointment.status === 'returned') {
+                    continue;
+                }
+                
+                const appStart = new Date(appointment.startTime);
+                const appEnd = new Date(appointment.endTime);
+                
+                // 檢查時間是否有重疊
+                if (startDateTime < appEnd && endDateTime > appStart) {
+                    totalRequested += appointment.ipadCount;
+                }
+            }
+            
+            // 檢查總數是否超過48台
+            if (totalRequested > 48) {
+                document.getElementById('conflict-warning').textContent = `警告：該時段已有 ${totalRequested - ipadCount} 台iPad被預約，加上您的 ${ipadCount} 台將超過總數48台`;
+                document.getElementById('conflict-warning').style.display = 'block';
+                document.getElementById('submit-btn').disabled = true;
+                document.getElementById('submit-btn').classList.add('btn-disabled');
+            } else {
+                document.getElementById('conflict-warning').style.display = 'none';
+                document.getElementById('submit-btn').disabled = false;
+                document.getElementById('submit-btn').classList.remove('btn-disabled');
+            }
+        }
+        
+        // 處理預約提交
+        function handleAppointmentSubmit(e) {
             e.preventDefault();
             
             const applicant = document.getElementById('applicant').value;
-            const phone = document.getElementById('applicant-phone').value;
-            const count = document.getElementById('ipad-count').value;
+            const applicantPhone = document.getElementById('applicant-phone').value;
+            const ipadCount = parseInt(document.getElementById('ipad-count').value);
             const purpose = document.getElementById('purpose').value;
             const startDate = document.getElementById('start-date').value;
             const startTime = document.getElementById('start-time').value;
             const endDate = document.getElementById('end-date').value;
             const endTime = document.getElementById('end-time').value;
             
-            // 檢查手機號碼格式
-            const phonePattern = /^[0-9]{11}$/;
-            if (!phonePattern.test(phone)) {
-                alert('請輸入正確的11位手機號碼');
-                return;
-            }
-            
-            // 檢查時間衝突
-            const conflictResult = checkTimeConflict(startDate, startTime, endDate, endTime);
-            if (conflictResult.conflict) {
-                alert(conflictResult.message);
-                return;
-            }
-            
-            // 檢查提前預約
-            const advanceResult = checkAdvanceBooking(startDate);
-            if (advanceResult.warning) {
-                alert(advanceResult.message);
-                return;
-            }
-            
-            // 生成新預約
-            const newAppointment = {
-                id: appointments.length > 0 ? Math.max(...appointments.map(a => a.id)) + 1 : 1,
-                applicant: applicant,
-                phone: phone,
-                count: parseInt(count),
+            // 創建預約對象
+            const appointment = {
+                id: Date.now().toString(),
+                applicant,
+                applicantPhone,
+                ipadCount,
+                purpose,
                 startTime: `${startDate}T${startTime}`,
                 endTime: `${endDate}T${endTime}`,
-                purpose: purpose,
                 status: systemSettings.enableApproval ? 'pending' : 'approved',
-                color: getRandomColor(),
-                returned: false,
-                returnNotes: '',
-                returnChecks: {},
-                returnTime: null
+                createTime: new Date().toISOString()
             };
             
-            appointments.push(newAppointment);
-            saveAppointments();
+            // 保存預約
+            saveAppointment(appointment);
             
             // 顯示成功消息
             document.getElementById('success-message').style.display = 'block';
+            
+            // 重置表單
             document.getElementById('appointment-form').reset();
             document.getElementById('selected-time').textContent = '未選擇時間段';
             document.getElementById('conflict-warning').style.display = 'none';
             document.getElementById('advance-warning').style.display = 'none';
             
-            updateLastActivityTime();
-        });
-        
-        // 生成隨機顏色
-        function getRandomColor() {
-            const colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#d35400', '#34495e'];
-            return colors[Math.floor(Math.random() * colors.length)];
+            // 3秒後隱藏成功消息
+            setTimeout(() => {
+                document.getElementById('success-message').style.display = 'none';
+            }, 3000);
         }
         
-        // 更新預約表格（帶分頁功能）
-        function updateAppointmentsTable() {
-            const tbody = document.querySelector('#appointments-table tbody');
-            tbody.innerHTML = '';
+        // 保存預約到Google Sheets
+        function saveAppointment(appointment) {
+            showLoading();
             
-            // 計算總頁數
-            const totalPages = Math.ceil(appointments.length / itemsPerPage);
+            fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'addAppointment',
+                    data: appointment
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    // 添加到本地數組
+                    appointments.push(appointment);
+                    
+                    // 如果啟用了審批，發送通知
+                    if (systemSettings.enableApproval && systemSettings.adminPhone) {
+                        sendNotification(appointment);
+                    }
+                } else {
+                    alert('保存失敗: ' + data.message);
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                console.error('Error:', error);
+                alert('保存失敗，請檢查網絡連接');
+            });
+        }
+        
+        // 發送通知
+        function sendNotification(appointment) {
+            // 這裡可以集成短信API或郵件API
+            // 示例：使用Twilio發送短信
+            console.log('發送通知給管理員:', systemSettings.adminPhone);
+            console.log('新預約申請:', appointment);
+        }
+        
+        // 從Google Sheets加載預約數據
+        function loadAppointments() {
+            showLoading();
             
-            // 確保當前頁在有效範圍內
-            if (currentPage > totalPages && totalPages > 0) {
-                currentPage = totalPages;
-            } else if (currentPage < 1) {
-                currentPage = 1;
-            }
+            fetch(SCRIPT_URL + '?action=getAppointments')
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    appointments = data.data || [];
+                    
+                    // 更新管理頁面的表格
+                    if (document.getElementById('admin-page').classList.contains('active')) {
+                        renderAppointmentsTable();
+                    }
+                    
+                    // 更新預約時段頁面
+                    if (document.getElementById('schedule-page').classList.contains('active')) {
+                        renderSchedule();
+                    }
+                } else {
+                    console.error('加載失敗:', data.message);
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                console.error('Error:', error);
+                alert('加載失敗，請檢查網絡連接');
+            });
+        }
+        
+        // 渲染預約表格（管理頁面）
+        function renderAppointmentsTable() {
+            const tableBody = document.querySelector('#appointments-table tbody');
+            tableBody.innerHTML = '';
             
-            // 計算當前頁的數據範圍
-            const startIndex = (currentPage - 1) * itemsPerPage;
-            const endIndex = Math.min(startIndex + itemsPerPage, appointments.length);
-            const currentAppointments = appointments.slice(startIndex, endIndex);
+            // 按創建時間倒序排列
+            const sortedAppointments = [...appointments].sort((a, b) => 
+                new Date(b.createTime) - new Date(a.createTime)
+            );
             
-            currentAppointments.forEach(appointment => {
+            sortedAppointments.forEach(appointment => {
                 const row = document.createElement('tr');
                 
-                // 狀態顯示
+                // 申請人
+                const applicantCell = document.createElement('td');
+                applicantCell.textContent = appointment.applicant;
+                row.appendChild(applicantCell);
+                
+                // 聯繫電話
+                const phoneCell = document.createElement('td');
+                phoneCell.textContent = appointment.applicantPhone;
+                row.appendChild(phoneCell);
+                
+                // iPad數量
+                const countCell = document.createElement('td');
+                countCell.textContent = appointment.ipadCount + ' 台';
+                row.appendChild(countCell);
+                
+                // 借用時間
+                const timeCell = document.createElement('td');
+                const start = new Date(appointment.startTime);
+                const end = new Date(appointment.endTime);
+                timeCell.textContent = `${formatDate(start)} ${formatTime(start)} - ${formatTime(end)}`;
+                row.appendChild(timeCell);
+                
+                // 狀態
+                const statusCell = document.createElement('td');
+                const statusSpan = document.createElement('span');
+                statusSpan.className = `status status-${appointment.status}`;
+                
                 let statusText = '';
-                let statusClass = '';
-                switch(appointment.status) {
+                switch (appointment.status) {
                     case 'pending':
                         statusText = '待審核';
-                        statusClass = 'status-pending';
                         break;
                     case 'approved':
                         statusText = '已批准';
-                        statusClass = 'status-approved';
                         break;
                     case 'rejected':
                         statusText = '已駁回';
-                        statusClass = 'status-rejected';
+                        break;
+                    case 'returned':
+                        statusText = '已歸還';
                         break;
                 }
                 
-                if (appointment.returned) {
-                    statusText = '已歸還';
-                    statusClass = 'status-returned';
-                }
+                statusSpan.textContent = statusText;
+                statusCell.appendChild(statusSpan);
+                row.appendChild(statusCell);
                 
-                // 只有未歸還且不是已駁回的預約才顯示駁回按鈕
-                const rejectButton = (!appointment.returned && appointment.status !== 'rejected') ? 
-                    `<button class="btn-danger reject-btn" data-id="${appointment.id}">駁回</button>` : '';
+                // 操作
+                const actionsCell = document.createElement('td');
                 
-                row.innerHTML = `
-                    <td>${appointment.applicant}</td>
-                    <td>${appointment.phone}</td>
-                    <td>${appointment.count}台</td>
-                    <td>${formatAppointmentTime(appointment.startTime, appointment.endTime)}</td>
-                    <td><span class="status ${statusClass}">${statusText}</span></td>
-                    <td>
-                        <button class="btn-primary view-detail-btn" data-id="${appointment.id}">查看詳情</button>
-                        ${rejectButton}
-                    </td>
-                `;
+                // 詳情按鈕
+                const detailBtn = document.createElement('button');
+                detailBtn.className = 'btn-secondary';
+                detailBtn.textContent = '詳情';
+                detailBtn.style.marginRight = '5px';
+                detailBtn.addEventListener('click', () => showAppointmentDetail(appointment));
+                actionsCell.appendChild(detailBtn);
                 
-                tbody.appendChild(row);
-            });
-            
-            // 更新分頁信息
-            updatePaginationInfo(totalPages);
-            
-            // 添加查看詳情按鈕事件
-            document.querySelectorAll('.view-detail-btn').forEach(button => {
-                button.addEventListener('click', function() {
-                    const id = parseInt(this.getAttribute('data-id'));
-                    showAppointmentDetail(id);
-                    updateLastActivityTime();
-                });
-            });
-            
-            // 添加駁回按鈕事件
-            document.querySelectorAll('.reject-btn').forEach(button => {
-                button.addEventListener('click', function() {
-                    const id = parseInt(this.getAttribute('data-id'));
-                    showRejectModal(id);
-                    updateLastActivityTime();
-                });
-            });
-        }
-        
-        // 更新分頁信息
-        function updatePaginationInfo(totalPages) {
-            const pageInfo = document.getElementById('page-info');
-            const firstPageBtn = document.getElementById('first-page');
-            const prevPageBtn = document.getElementById('prev-page');
-            const nextPageBtn = document.getElementById('next-page');
-            const lastPageBtn = document.getElementById('last-page');
-            
-            // 更新頁面信息
-            pageInfo.textContent = `第 ${currentPage} 頁，共 ${totalPages || 1} 頁`;
-            
-            // 更新按鈕狀態
-            firstPageBtn.disabled = currentPage === 1;
-            prevPageBtn.disabled = currentPage === 1;
-            nextPageBtn.disabled = currentPage === totalPages || totalPages === 0;
-            lastPageBtn.disabled = currentPage === totalPages || totalPages === 0;
-            
-            // 添加禁用類
-            if (firstPageBtn.disabled) {
-                firstPageBtn.classList.add('disabled');
-            } else {
-                firstPageBtn.classList.remove('disabled');
-            }
-            
-            if (prevPageBtn.disabled) {
-                prevPageBtn.classList.add('disabled');
-            } else {
-                prevPageBtn.classList.remove('disabled');
-            }
-            
-            if (nextPageBtn.disabled) {
-                nextPageBtn.classList.add('disabled');
-            } else {
-                nextPageBtn.classList.remove('disabled');
-            }
-            
-            if (lastPageBtn.disabled) {
-                lastPageBtn.classList.add('disabled');
-            } else {
-                lastPageBtn.classList.remove('disabled');
-            }
-        }
-        
-        // 分頁按鈕事件
-        document.getElementById('first-page').addEventListener('click', function() {
-            if (currentPage > 1) {
-                currentPage = 1;
-                updateAppointmentsTable();
-            }
-            updateLastActivityTime();
-        });
-        
-        document.getElementById('prev-page').addEventListener('click', function() {
-            if (currentPage > 1) {
-                currentPage--;
-                updateAppointmentsTable();
-            }
-            updateLastActivityTime();
-        });
-        
-        document.getElementById('next-page').addEventListener('click', function() {
-            const totalPages = Math.ceil(appointments.length / itemsPerPage);
-            if (currentPage < totalPages) {
-                currentPage++;
-                updateAppointmentsTable();
-            }
-            updateLastActivityTime();
-        });
-        
-        document.getElementById('last-page').addEventListener('click', function() {
-            const totalPages = Math.ceil(appointments.length / itemsPerPage);
-            if (currentPage < totalPages) {
-                currentPage = totalPages;
-                updateAppointmentsTable();
-            }
-            updateLastActivityTime();
-        });
-        
-        // 顯示駁回確認模態框
-        function showRejectModal(id) {
-            const appointment = appointments.find(a => a.id === id);
-            if (!appointment) return;
-            
-            const modalContent = document.getElementById('reject-modal-content');
-            modalContent.innerHTML = `
-                <div class="appointment-details">
-                    <div class="detail-item">
-                        <div class="detail-label">申請人</div>
-                        <div class="detail-value">${appointment.applicant}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">iPad數量</div>
-                        <div class="detail-value">${appointment.count}台</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">預約時間</div>
-                        <div class="detail-value">${formatAppointmentTime(appointment.startTime, appointment.endTime)}</div>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label for="reject-reason">駁回原因</label>
-                    <textarea id="reject-reason" rows="3" placeholder="請輸入駁回此預約的原因" required></textarea>
-                </div>
-                
-                <div class="buttons">
-                    <button class="btn-secondary" id="cancel-reject">取消</button>
-                    <button class="btn-danger" id="confirm-reject" data-id="${appointment.id}">確認駁回</button>
-                </div>
-            `;
-            
-            document.getElementById('reject-modal').style.display = 'flex';
-            
-            // 確認駁回按鈕事件
-            document.getElementById('confirm-reject').addEventListener('click', function() {
-                const appointmentId = parseInt(this.getAttribute('data-id'));
-                const appointmentIndex = appointments.findIndex(a => a.id === appointmentId);
-                const rejectReason = document.getElementById('reject-reason').value;
-                
-                if (appointmentIndex !== -1 && rejectReason.trim() !== '') {
-                    // 更新預約狀態為駁回
-                    appointments[appointmentIndex].status = 'rejected';
-                    appointments[appointmentIndex].rejectReason = rejectReason;
+                // 根據狀態顯示不同操作
+                if (appointment.status === 'pending') {
+                    // 批准按鈕
+                    const approveBtn = document.createElement('button');
+                    approveBtn.className = 'btn-success';
+                    approveBtn.textContent = '批准';
+                    approveBtn.style.marginRight = '5px';
+                    approveBtn.addEventListener('click', () => updateAppointmentStatus(appointment.id, 'approved'));
+                    actionsCell.appendChild(approveBtn);
                     
-                    saveAppointments();
-                    
-                    alert('預約已成功駁回！');
-                    document.getElementById('reject-modal').style.display = 'none';
-                    updateAppointmentsTable();
-                } else {
-                    alert('請填寫駁回原因');
+                    // 駁回按鈕
+                    const rejectBtn = document.createElement('button');
+                    rejectBtn.className = 'btn-danger';
+                    rejectBtn.textContent = '駁回';
+                    rejectBtn.addEventListener('click', () => showRejectModal(appointment.id));
+                    actionsCell.appendChild(rejectBtn);
+                } else if (appointment.status === 'approved') {
+                    // 歸還按鈕
+                    const returnBtn = document.createElement('button');
+                    returnBtn.className = 'btn-warning';
+                    returnBtn.textContent = '歸還';
+                    returnBtn.addEventListener('click', () => showReturnModal(appointment));
+                    actionsCell.appendChild(returnBtn);
                 }
-                updateLastActivityTime();
-            });
-            
-            // 取消駁回按鈕事件
-            document.getElementById('cancel-reject').addEventListener('click', function() {
-                document.getElementById('reject-modal').style.display = 'none';
-                updateLastActivityTime();
+                
+                row.appendChild(actionsCell);
+                
+                tableBody.appendChild(row);
             });
         }
         
-        // 顯示預約詳情
-        function showAppointmentDetail(id) {
-            const appointment = appointments.find(a => a.id === id);
-            if (!appointment) return;
+        // 渲染預約時段頁面
+        function renderSchedule() {
+            // 計算當前週的日期範圍
+            const now = new Date();
+            const currentDay = now.getDay(); // 0 = 星期日, 1 = 星期一, ..., 6 = 星期六
+            const startOfWeek = new Date(now);
+            startOfWeek.setDate(now.getDate() - currentDay + (currentDay === 0 ? -6 : 1) + (currentWeekOffset * 7));
             
-            const modalContent = document.getElementById('appointment-detail-content');
+            // 更新週標題
+            const endOfWeek = new Date(startOfWeek);
+            endOfWeek.setDate(startOfWeek.getDate() + 6);
             
-            // 生成歸還檢查信息
-            let returnChecksInfo = '';
-            if (appointment.returned && appointment.returnChecks) {
-                const checks = appointment.returnChecks;
-                const checkedItems = [];
+            const weekTitle = document.getElementById('week-title');
+            weekTitle.textContent = `${formatDate(startOfWeek)} - ${formatDate(endOfWeek)}`;
+            
+            // 渲染表頭
+            renderScheduleHeader(startOfWeek);
+            
+            // 渲染時間段
+            renderTimeSlots(startOfWeek);
+            
+            // 渲染圖例
+            renderLegend();
+        }
+        
+        // 渲染預約時段表頭
+        function renderScheduleHeader(startOfWeek) {
+            const headerRow = document.getElementById('schedule-header');
+            headerRow.innerHTML = '';
+            
+            // 時間標籤
+            const timeLabel = document.createElement('div');
+            timeLabel.className = 'time-header-cell';
+            timeLabel.textContent = '時間';
+            headerRow.appendChild(timeLabel);
+            
+            // 日期標籤
+            for (let i = 0; i < 7; i++) {
+                const date = new Date(startOfWeek);
+                date.setDate(startOfWeek.getDate() + i);
                 
-                if (checks.deviceCount) checkedItems.push('設備數量正確');
-                if (checks.deviceCondition) checkedItems.push('設備外觀完好');
-                if (checks.accessories) checkedItems.push('配件齊全');
+                const dateCell = document.createElement('div');
+                dateCell.className = 'time-header-cell';
                 
-                if (checkedItems.length > 0) {
-                    returnChecksInfo = `
-                        <div class="detail-item">
-                            <div class="detail-label">歸還檢查項目</div>
-                            <div class="detail-value">${checkedItems.join('、')}</div>
-                        </div>
-                    `;
+                const dayNames = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+                dateCell.textContent = `${formatDate(date)} ${dayNames[date.getDay()]}`;
+                
+                headerRow.appendChild(dateCell);
+            }
+        }
+        
+        // 渲染時間段
+        function renderTimeSlots(startOfWeek) {
+            const container = document.getElementById('time-slots-container');
+            container.innerHTML = '';
+            
+            // 創建時間段（從8:00到22:00，每30分鐘一個時段）
+            for (let hour = 8; hour <= 22; hour++) {
+                for (let minute = 0; minute < 60; minute += 30) {
+                    const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+                    
+                    const row = document.createElement('div');
+                    row.className = 'time-slot-row';
+                    
+                    // 時間標籤
+                    const timeLabel = document.createElement('div');
+                    timeLabel.className = 'time-label';
+                    timeLabel.textContent = timeString;
+                    row.appendChild(timeLabel);
+                    
+                    // 日期單元格
+                    for (let i = 0; i < 7; i++) {
+                        const date = new Date(startOfWeek);
+                        date.setDate(startOfWeek.getDate() + i);
+                        
+                        const cell = document.createElement('div');
+                        cell.className = 'time-cell';
+                        cell.setAttribute('data-date', formatDate(date));
+                        cell.setAttribute('data-time', timeString);
+                        row.appendChild(cell);
+                    }
+                    
+                    container.appendChild(row);
                 }
             }
             
-            // 駁回原因
-            let rejectReasonInfo = '';
-            if (appointment.status === 'rejected' && appointment.rejectReason) {
-                rejectReasonInfo = `
-                    <div class="detail-item">
-                        <div class="detail-label">駁回原因</div>
-                        <div class="detail-value">${appointment.rejectReason}</div>
-                    </div>
-                `;
+            // 渲染預約塊
+            renderAppointmentBlocks(startOfWeek);
+        }
+        
+        // 渲染預約塊
+        function renderAppointmentBlocks(startOfWeek) {
+            // 計算當前週的開始和結束時間
+            const weekStart = new Date(startOfWeek);
+            weekStart.setHours(0, 0, 0, 0);
+            
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 7);
+            weekEnd.setHours(23, 59, 59, 999);
+            
+            // 過濾出當前週的預約
+            const weekAppointments = appointments.filter(appointment => {
+                const start = new Date(appointment.startTime);
+                const end = new Date(appointment.endTime);
+                
+                return (start < weekEnd && end > weekStart) && 
+                       (appointment.status === 'approved' || appointment.status === 'pending');
+            });
+            
+            // 渲染每個預約塊
+            weekAppointments.forEach(appointment => {
+                renderAppointmentBlock(appointment, startOfWeek);
+            });
+        }
+        
+        // 渲染單個預約塊
+        function renderAppointmentBlock(appointment, startOfWeek) {
+            const start = new Date(appointment.startTime);
+            const end = new Date(appointment.endTime);
+            
+            // 計算預約塊的位置和尺寸
+            const startDate = formatDate(start);
+            const startTime = formatTime(start);
+            const endTime = formatTime(end);
+            
+            // 查找對應的日期單元格
+            const dateCells = document.querySelectorAll(`.time-cell[data-date="${startDate}"]`);
+            if (dateCells.length === 0) return;
+            
+            // 計算開始和結束的行索引
+            const startHour = start.getHours();
+            const startMinute = start.getMinutes();
+            const endHour = end.getHours();
+            const endMinute = end.getMinutes();
+            
+            const startRowIndex = (startHour - 8) * 2 + (startMinute === 30 ? 1 : 0);
+            const endRowIndex = (endHour - 8) * 2 + (endMinute === 30 ? 1 : 0);
+            
+            // 計算高度（每個時間段30px）
+            const height = (endRowIndex - startRowIndex) * 30;
+            
+            // 計算頂部位置
+            const top = startRowIndex * 30;
+            
+            // 創建預約塊
+            const block = document.createElement('div');
+            block.className = 'appointment-block';
+            block.style.top = `${top}px`;
+            block.style.height = `${height}px`;
+            
+            // 根據狀態設置背景顏色
+            if (appointment.status === 'approved') {
+                block.style.background = 'linear-gradient(135deg, #3498db, #2980b9)';
+            } else if (appointment.status === 'pending') {
+                block.style.background = 'linear-gradient(135deg, #f39c12, #e67e22)';
             }
             
-            modalContent.innerHTML = `
+            // 添加內容
+            const info = document.createElement('div');
+            info.className = 'appointment-info';
+            info.textContent = `${appointment.applicant} (${appointment.ipadCount}台)`;
+            
+            const time = document.createElement('div');
+            time.className = 'appointment-time';
+            time.textContent = `${startTime}-${endTime}`;
+            
+            block.appendChild(info);
+            block.appendChild(time);
+            
+            // 添加到對應的日期單元格
+            const dayIndex = start.getDay() === 0 ? 6 : start.getDay() - 1; // 調整週日索引
+            if (dateCells[dayIndex]) {
+                dateCells[dayIndex].appendChild(block);
+            }
+        }
+        
+        // 渲染圖例
+        function renderLegend() {
+            const legend = document.getElementById('schedule-legend');
+            legend.innerHTML = '';
+            
+            const legendItems = [
+                { color: 'linear-gradient(135deg, #3498db, #2980b9)', text: '已批准' },
+                { color: 'linear-gradient(135deg, #f39c12, #e67e22)', text: '待審核' }
+            ];
+            
+            legendItems.forEach(item => {
+                const legendItem = document.createElement('div');
+                legendItem.className = 'legend-item';
+                
+                const colorBox = document.createElement('div');
+                colorBox.className = 'legend-color';
+                colorBox.style.background = item.color;
+                
+                const text = document.createElement('span');
+                text.textContent = item.text;
+                
+                legendItem.appendChild(colorBox);
+                legendItem.appendChild(text);
+                legend.appendChild(legendItem);
+            });
+        }
+        
+        // 渲染歸還列表
+        function renderReturnList() {
+            const returnList = document.getElementById('return-list');
+            returnList.innerHTML = '';
+            
+            // 過濾出已批准但未歸還的預約
+            const approvedAppointments = appointments.filter(app => 
+                app.status === 'approved'
+            );
+            
+            if (approvedAppointments.length === 0) {
+                returnList.innerHTML = '<p style="text-align: center; padding: 20px; color: #666;">暫無需要歸還的設備</p>';
+                return;
+            }
+            
+            approvedAppointments.forEach(appointment => {
+                const returnItem = document.createElement('div');
+                returnItem.className = 'return-item';
+                
+                const header = document.createElement('div');
+                header.className = 'return-item-header';
+                
+                const name = document.createElement('div');
+                name.textContent = appointment.applicant;
+                name.style.fontWeight = 'bold';
+                
+                const count = document.createElement('div');
+                count.textContent = `${appointment.ipadCount} 台iPad`;
+                count.style.color = '#3498db';
+                
+                header.appendChild(name);
+                header.appendChild(count);
+                
+                const details = document.createElement('div');
+                details.className = 'return-item-details';
+                
+                const start = new Date(appointment.startTime);
+                const end = new Date(appointment.endTime);
+                details.textContent = `借用時間: ${formatDate(start)} ${formatTime(start)} - ${formatTime(end)}`;
+                
+                const actions = document.createElement('div');
+                actions.className = 'return-actions';
+                
+                const returnBtn = document.createElement('button');
+                returnBtn.className = 'btn-warning';
+                returnBtn.textContent = '歸還設備';
+                returnBtn.addEventListener('click', () => showReturnModal(appointment));
+                
+                actions.appendChild(returnBtn);
+                
+                returnItem.appendChild(header);
+                returnItem.appendChild(details);
+                returnItem.appendChild(actions);
+                
+                returnList.appendChild(returnItem);
+            });
+        }
+        
+        // 顯示歸還模態框
+        function showReturnModal(appointment) {
+            const modal = document.getElementById('return-modal');
+            const content = document.getElementById('return-modal-content');
+            
+            content.innerHTML = `
                 <div class="appointment-details">
                     <div class="detail-item">
                         <div class="detail-label">申請人</div>
@@ -1826,627 +2017,485 @@
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">聯繫電話</div>
-                        <div class="detail-value">${appointment.phone}</div>
+                        <div class="detail-value">${appointment.applicantPhone}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">iPad數量</div>
-                        <div class="detail-value">${appointment.count}台</div>
+                        <div class="detail-value">${appointment.ipadCount} 台</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">借用時間</div>
+                        <div class="detail-value">${formatDateTime(new Date(appointment.startTime))} - ${formatTime(new Date(appointment.endTime))}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">使用目的</div>
-                        <div class="detail-value">${appointment.purpose}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">預約時間</div>
-                        <div class="detail-value">${formatAppointmentTime(appointment.startTime, appointment.endTime)}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">狀態</div>
-                        <div class="detail-value">
-                            ${appointment.returned ? '已歸還' : 
-                              appointment.status === 'approved' ? '已批准' : 
-                              appointment.status === 'pending' ? '待審核' : '已駁回'}
-                        </div>
-                    </div>
-                    ${rejectReasonInfo}
-                    ${appointment.returned ? `
-                    <div class="detail-item">
-                        <div class="detail-label">歸還時間</div>
-                        <div class="detail-value">${appointment.returnTime ? new Date(appointment.returnTime).toLocaleString() : '未記錄'}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">歸還備註</div>
-                        <div class="detail-value">${appointment.returnNotes || '無'}</div>
-                    </div>
-                    ${returnChecksInfo}
-                    ` : ''}
-                </div>
-                <div class="buttons" style="margin-top: 15px;">
-                    <button class="btn-secondary" id="close-detail-modal">關閉</button>
-                    <button class="btn-print" id="print-detail" data-id="${appointment.id}">打印</button>
-                </div>
-            `;
-            
-            document.getElementById('appointment-detail-modal').style.display = 'flex';
-            
-            // 添加打印按鈕事件
-            document.getElementById('print-detail').addEventListener('click', function() {
-                const appointmentId = parseInt(this.getAttribute('data-id'));
-                printAppointmentDetail(appointmentId);
-                updateLastActivityTime();
-            });
-            
-            // 關閉模態框
-            document.getElementById('close-detail-modal').addEventListener('click', function() {
-                document.getElementById('appointment-detail-modal').style.display = 'none';
-                updateLastActivityTime();
-            });
-        }
-        
-        // 打印預約詳情
-        function printAppointmentDetail(id) {
-            const appointment = appointments.find(a => a.id === id);
-            if (!appointment) return;
-            
-            // 更新打印內容
-            const printDetails = document.getElementById('print-details');
-            const printTime = document.getElementById('print-time');
-            
-            // 設置打印時間
-            printTime.textContent = new Date().toLocaleString();
-            
-            // 生成打印內容
-            let printContent = '';
-            
-            printContent += `
-                <div class="print-detail-item">
-                    <div class="print-label">申請人</div>
-                    <div class="print-value">${appointment.applicant}</div>
-                </div>
-                <div class="print-detail-item">
-                    <div class="print-label">聯繫電話</div>
-                    <div class="print-value">${appointment.phone}</div>
-                </div>
-                <div class="print-detail-item">
-                    <div class="print-label">iPad數量</div>
-                    <div class="print-value">${appointment.count}台</div>
-                </div>
-                <div class="print-detail-item">
-                    <div class="print-label">使用目的</div>
-                    <div class="print-value">${appointment.purpose}</div>
-                </div>
-                <div class="print-detail-item">
-                    <div class="print-label">預約時間</div>
-                    <div class="print-value">${formatAppointmentTime(appointment.startTime, appointment.endTime)}</div>
-                </div>
-                <div class="print-detail-item">
-                    <div class="print-label">狀態</div>
-                    <div class="print-value">
-                        ${appointment.returned ? '已歸還' : 
-                          appointment.status === 'approved' ? '已批准' : 
-                          appointment.status === 'pending' ? '待審核' : '已駁回'}
+                        <div class="detail-value">${appointment.purpose || '未填寫'}</div>
                     </div>
                 </div>
-            `;
-            
-            if (appointment.status === 'rejected' && appointment.rejectReason) {
-                printContent += `
-                    <div class="print-detail-item">
-                        <div class="print-label">駁回原因</div>
-                        <div class="print-value">${appointment.rejectReason}</div>
-                    </div>
-                `;
-            }
-            
-            if (appointment.returned) {
-                printContent += `
-                    <div class="print-detail-item">
-                        <div class="print-label">歸還時間</div>
-                        <div class="print-value">${appointment.returnTime ? new Date(appointment.returnTime).toLocaleString() : '未記錄'}</div>
-                    </div>
-                    <div class="print-detail-item">
-                        <div class="print-label">歸還備註</div>
-                        <div class="print-value">${appointment.returnNotes || '無'}</div>
-                    </div>
-                `;
                 
-                if (appointment.returnChecks) {
-                    const checks = appointment.returnChecks;
-                    const checkedItems = [];
-                    
-                    if (checks.deviceCount) checkedItems.push('設備數量正確');
-                    if (checks.deviceCondition) checkedItems.push('設備外觀完好');
-                    if (checks.accessories) checkedItems.push('配件齊全');
-                    
-                    if (checkedItems.length > 0) {
-                        printContent += `
-                            <div class="print-detail-item">
-                                <div class="print-label">歸還檢查項目</div>
-                                <div class="print-value">${checkedItems.join('、')}</div>
-                            </div>
-                        `;
-                    }
+                <div class="return-check-options">
+                    <div class="check-option">
+                        <input type="checkbox" id="check-device-count">
+                        <label for="check-device-count">設備數量正確</label>
+                    </div>
+                    <div class="check-option">
+                        <input type="checkbox" id="check-device-condition">
+                        <label for="check-device-condition">設備狀況良好</label>
+                    </div>
+                    <div class="check-option">
+                        <input type="checkbox" id="check-accessories">
+                        <label for="check-accessories">配件齊全</label>
+                    </div>
+                </div>
+                
+                <div class="buttons">
+                    <button class="btn-secondary" id="cancel-return">取消</button>
+                    <button class="btn-success" id="confirm-return">確認歸還</button>
+                </div>
+            `;
+            
+            // 添加事件監聽器
+            document.getElementById('cancel-return').addEventListener('click', () => {
+                modal.style.display = 'none';
+            });
+            
+            document.getElementById('confirm-return').addEventListener('click', () => {
+                const deviceCountChecked = document.getElementById('check-device-count').checked;
+                const deviceConditionChecked = document.getElementById('check-device-condition').checked;
+                const accessoriesChecked = document.getElementById('check-accessories').checked;
+                
+                if (!deviceCountChecked || !deviceConditionChecked || !accessoriesChecked) {
+                    alert('請確認所有檢查項已完成');
+                    return;
                 }
-            }
-            
-            printDetails.innerHTML = printContent;
-            
-            // 顯示打印容器並觸發打印
-            document.getElementById('print-container').style.display = 'block';
-            window.print();
-            document.getElementById('print-container').style.display = 'none';
-        }
-        
-        // 格式化預約時間顯示
-        function formatAppointmentTime(startTime, endTime) {
-            const start = new Date(startTime);
-            const end = new Date(endTime);
-            
-            const startDateStr = `${start.getMonth() + 1}/${start.getDate()}`;
-            const startTimeStr = `${start.getHours().toString().padStart(2, '0')}:${start.getMinutes().toString().padStart(2, '0')}`;
-            const endTimeStr = `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}`;
-            
-            return `${startDateStr} ${startTimeStr}-${endTimeStr}`;
-        }
-        
-        // 更新歸還列表
-        function updateReturnList() {
-            const returnList = document.getElementById('return-list');
-            returnList.innerHTML = '';
-            
-            const pendingReturns = appointments.filter(a => a.status === 'approved' && !a.returned);
-            
-            if (pendingReturns.length === 0) {
-                returnList.innerHTML = '<p style="text-align: center; padding: 20px;">暫無待歸還設備</p>';
-                return;
-            }
-            
-            pendingReturns.forEach(appointment => {
-                const returnItem = document.createElement('div');
-                returnItem.className = 'return-item';
                 
-                returnItem.innerHTML = `
-                    <div class="return-item-header">
-                        <div><strong>${appointment.applicant}</strong></div>
-                        <div>${appointment.count}台iPad</div>
-                    </div>
-                    <div class="return-item-details">
-                        <div>聯繫電話: ${appointment.phone}</div>
-                        <div>借用時間: ${formatAppointmentTime(appointment.startTime, appointment.endTime)}</div>
-                        <div>使用目的: ${appointment.purpose}</div>
-                    </div>
-                    <div class="return-actions">
-                        <button class="btn-success return-btn" data-id="${appointment.id}">歸還登記</button>
-                    </div>
-                `;
-                
-                returnList.appendChild(returnItem);
+                updateAppointmentStatus(appointment.id, 'returned');
+                modal.style.display = 'none';
             });
             
-            // 添加歸還按鈕事件
-            document.querySelectorAll('.return-btn').forEach(button => {
-                button.addEventListener('click', function() {
-                    const id = parseInt(this.getAttribute('data-id'));
-                    showReturnModal(id);
-                    updateLastActivityTime();
-                });
-            });
+            modal.style.display = 'flex';
         }
         
-        // 顯示歸還確認模態框
-        function showReturnModal(id) {
-            const appointment = appointments.find(a => a.id === id);
-            if (!appointment) return;
+        // 顯示預約詳情模態框
+        function showAppointmentDetail(appointment) {
+            const modal = document.getElementById('appointment-detail-modal');
+            const content = document.getElementById('appointment-detail-content');
             
-            const modalContent = document.getElementById('return-modal-content');
-            modalContent.innerHTML = `
+            const start = new Date(appointment.startTime);
+            const end = new Date(appointment.endTime);
+            
+            let statusText = '';
+            switch (appointment.status) {
+                case 'pending':
+                    statusText = '待審核';
+                    break;
+                case 'approved':
+                    statusText = '已批准';
+                    break;
+                case 'rejected':
+                    statusText = '已駁回';
+                    break;
+                case 'returned':
+                    statusText = '已歸還';
+                    break;
+            }
+            
+            content.innerHTML = `
                 <div class="appointment-details">
                     <div class="detail-item">
                         <div class="detail-label">申請人</div>
                         <div class="detail-value">${appointment.applicant}</div>
                     </div>
                     <div class="detail-item">
+                        <div class="detail-label">聯繫電話</div>
+                        <div class="detail-value">${appointment.applicantPhone}</div>
+                    </div>
+                    <div class="detail-item">
                         <div class="detail-label">iPad數量</div>
-                        <div class="detail-value">${appointment.count}台</div>
+                        <div class="detail-value">${appointment.ipadCount} 台</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">借用時間</div>
-                        <div class="detail-value">${formatAppointmentTime(appointment.startTime, appointment.endTime)}</div>
+                        <div class="detail-value">${formatDateTime(start)} - ${formatDateTime(end)}</div>
                     </div>
-                </div>
-                
-                <div class="return-check-options">
-                    <div class="check-option">
-                        <input type="checkbox" id="check-device-count" name="check-device-count">
-                        <label for="check-device-count">設備數量正確</label>
+                    <div class="detail-item">
+                        <div class="detail-label">使用目的</div>
+                        <div class="detail-value">${appointment.purpose || '未填寫'}</div>
                     </div>
-                    <div class="check-option">
-                        <input type="checkbox" id="check-device-condition" name="check-device-condition">
-                        <label for="check-device-condition">設備外觀完好</label>
+                    <div class="detail-item">
+                        <div class="detail-label">狀態</div>
+                        <div class="detail-value">${statusText}</div>
                     </div>
-                    <div class="check-option">
-                        <input type="checkbox" id="check-accessories" name="check-accessories">
-                        <label for="check-accessories">配件齊全</label>
+                    <div class="detail-item">
+                        <div class="detail-label">預約時間</div>
+                        <div class="detail-value">${formatDateTime(new Date(appointment.createTime))}</div>
                     </div>
-                </div>
-                
-                <div class="form-group">
-                    <label for="return-notes">歸還備註</label>
-                    <textarea id="return-notes" rows="3" placeholder="請輸入歸還備註（可選）"></textarea>
                 </div>
                 
                 <div class="buttons">
-                    <button class="btn-secondary" id="cancel-return">取消</button>
-                    <button class="btn-success" id="confirm-return" data-id="${appointment.id}">確認歸還</button>
+                    <button class="btn-secondary" id="close-detail-modal">關閉</button>
+                    <button class="btn-print" id="print-appointment">打印憑證</button>
                 </div>
             `;
             
-            document.getElementById('return-modal').style.display = 'flex';
-            
-            // 確認歸還按鈕事件
-            document.getElementById('confirm-return').addEventListener('click', function() {
-                const appointmentId = parseInt(this.getAttribute('data-id'));
-                const appointmentIndex = appointments.findIndex(a => a.id === appointmentId);
-                
-                if (appointmentIndex !== -1) {
-                    // 收集檢查結果
-                    const checks = {
-                        deviceCount: document.getElementById('check-device-count').checked,
-                        deviceCondition: document.getElementById('check-device-condition').checked,
-                        accessories: document.getElementById('check-accessories').checked
-                    };
-                    
-                    const notes = document.getElementById('return-notes').value;
-                    
-                    // 更新預約記錄
-                    appointments[appointmentIndex].returned = true;
-                    appointments[appointmentIndex].returnChecks = checks;
-                    appointments[appointmentIndex].returnNotes = notes;
-                    appointments[appointmentIndex].returnTime = new Date().toISOString();
-                    
-                    saveAppointments();
-                    
-                    alert('設備歸還登記成功！');
-                    document.getElementById('return-modal').style.display = 'none';
-                    updateReturnList();
-                    updateAppointmentsTable();
-                }
-                updateLastActivityTime();
+            // 添加事件監聽器
+            document.getElementById('close-detail-modal').addEventListener('click', () => {
+                modal.style.display = 'none';
             });
             
-            // 取消歸還按鈕事件
-            document.getElementById('cancel-return').addEventListener('click', function() {
-                document.getElementById('return-modal').style.display = 'none';
-                updateLastActivityTime();
+            document.getElementById('print-appointment').addEventListener('click', () => {
+                printAppointment(appointment);
             });
+            
+            modal.style.display = 'flex';
         }
         
-        // 更新預約視圖
-        function updateScheduleView() {
-            // 獲取當前週的日期範圍
-            const today = new Date();
-            const currentWeekStart = new Date(today);
-            currentWeekStart.setDate(today.getDate() - today.getDay() + (currentWeekOffset * 7));
+        // 顯示駁回模態框
+        function showRejectModal(appointmentId) {
+            const modal = document.getElementById('reject-modal');
+            const content = document.getElementById('reject-modal-content');
             
-            // 更新週標題
-            const weekTitle = document.getElementById('week-title');
-            const weekEnd = new Date(currentWeekStart);
-            weekEnd.setDate(currentWeekStart.getDate() + 6);
-            
-            weekTitle.textContent = `${currentWeekStart.getMonth() + 1}/${currentWeekStart.getDate()} - ${weekEnd.getMonth() + 1}/${weekEnd.getDate()}`;
-            
-            // 生成表頭
-            const scheduleHeader = document.getElementById('schedule-header');
-            scheduleHeader.innerHTML = '<div class="time-header-cell">時間</div>';
-            
-            for (let i = 0; i < 7; i++) {
-                const day = new Date(currentWeekStart);
-                day.setDate(currentWeekStart.getDate() + i);
+            content.innerHTML = `
+                <div class="form-group">
+                    <label for="reject-reason">駁回原因</label>
+                    <textarea id="reject-reason" rows="3" placeholder="請簡要說明駁回原因"></textarea>
+                </div>
                 
-                const dayNames = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
-                const dayName = dayNames[day.getDay()];
-                const dateStr = `${day.getMonth() + 1}/${day.getDate()}`;
+                <div class="buttons">
+                    <button class="btn-secondary" id="cancel-reject">取消</button>
+                    <button class="btn-danger" id="confirm-reject">確認駁回</button>
+                </div>
+            `;
+            
+            // 添加事件監聽器
+            document.getElementById('cancel-reject').addEventListener('click', () => {
+                modal.style.display = 'none';
+            });
+            
+            document.getElementById('confirm-reject').addEventListener('click', () => {
+                const reason = document.getElementById('reject-reason').value;
+                if (!reason.trim()) {
+                    alert('請填寫駁回原因');
+                    return;
+                }
                 
-                const headerCell = document.createElement('div');
-                headerCell.className = 'time-header-cell';
-                headerCell.textContent = `${dayName} ${dateStr}`;
-                scheduleHeader.appendChild(headerCell);
-            }
+                updateAppointmentStatus(appointmentId, 'rejected', reason);
+                modal.style.display = 'none';
+            });
             
-            // 生成時間段 (08:00-18:00)
-            const timeSlotsContainer = document.getElementById('time-slots-container');
-            timeSlotsContainer.innerHTML = '';
+            modal.style.display = 'flex';
+        }
+        
+        // 更新預約狀態
+        function updateAppointmentStatus(appointmentId, status, reason = '') {
+            showLoading();
             
-            for (let hour = 8; hour <= 18; hour++) {
-                for (let minute of [0, 30]) {
-                    if (hour === 18 && minute === 30) continue;
-                    
-                    const timeSlotRow = document.createElement('div');
-                    timeSlotRow.className = 'time-slot-row';
-                    
-                    const timeLabel = document.createElement('div');
-                    timeLabel.className = 'time-label';
-                    timeLabel.textContent = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-                    timeSlotRow.appendChild(timeLabel);
-                    
-                    for (let i = 0; i < 7; i++) {
-                        const day = new Date(currentWeekStart);
-                        day.setDate(currentWeekStart.getDate() + i);
-                        
-                        const timeCell = document.createElement('div');
-                        timeCell.className = 'time-cell';
-                        timeCell.setAttribute('data-date', day.toISOString().split('T')[0]);
-                        timeCell.setAttribute('data-time', `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
-                        timeSlotRow.appendChild(timeCell);
+            fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'updateAppointmentStatus',
+                    id: appointmentId,
+                    status: status,
+                    reason: reason
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    // 更新本地數據
+                    const appointmentIndex = appointments.findIndex(app => app.id === appointmentId);
+                    if (appointmentIndex !== -1) {
+                        appointments[appointmentIndex].status = status;
+                        if (reason) {
+                            appointments[appointmentIndex].rejectReason = reason;
+                        }
                     }
                     
-                    timeSlotsContainer.appendChild(timeSlotRow);
+                    // 刷新顯示
+                    if (document.getElementById('admin-page').classList.contains('active')) {
+                        renderAppointmentsTable();
+                    }
+                    
+                    if (document.getElementById('schedule-page').classList.contains('active')) {
+                        renderSchedule();
+                    }
+                    
+                    if (document.getElementById('return-page').classList.contains('active')) {
+                        renderReturnList();
+                    }
+                    
+                    alert('操作成功');
+                } else {
+                    alert('操作失敗: ' + data.message);
                 }
+            })
+            .catch(error => {
+                hideLoading();
+                console.error('Error:', error);
+                alert('操作失敗，請檢查網絡連接');
+            });
+        }
+        
+        // 打印預約憑證
+        function printAppointment(appointment) {
+            const printContainer = document.getElementById('print-container');
+            const printDetails = document.getElementById('print-details');
+            const printTime = document.getElementById('print-time');
+            
+            const start = new Date(appointment.startTime);
+            const end = new Date(appointment.endTime);
+            
+            let statusText = '';
+            switch (appointment.status) {
+                case 'pending':
+                    statusText = '待審核';
+                    break;
+                case 'approved':
+                    statusText = '已批准';
+                    break;
+                case 'rejected':
+                    statusText = '已駁回';
+                    break;
+                case 'returned':
+                    statusText = '已歸還';
+                    break;
             }
             
-            // 添加預約塊
-            appointments.forEach(appointment => {
-                if (appointment.status !== 'approved') return;
-                
-                const startTime = new Date(appointment.startTime);
-                const endTime = new Date(appointment.endTime);
-                
-                // 檢查預約是否在當前週
-                const weekStart = new Date(currentWeekStart);
-                weekStart.setHours(0, 0, 0, 0);
-                
-                const weekEnd = new Date(weekStart);
-                weekEnd.setDate(weekStart.getDate() + 7);
-                
-                if (startTime >= weekEnd || endTime <= weekStart) return;
-                
-                // 計算預約塊位置
-                const dayIndex = (startTime.getDay() + 7 - weekStart.getDay()) % 7;
-                const startMinutes = startTime.getHours() * 60 + startTime.getMinutes();
-                const endMinutes = endTime.getHours() * 60 + endTime.getMinutes();
-                
-                const top = ((startMinutes - 8 * 60) / 30) * 30;
-                const height = ((endMinutes - startMinutes) / 30) * 30;
-                
-                // 創建預約塊
-                const appointmentBlock = document.createElement('div');
-                appointmentBlock.className = 'appointment-block';
-                appointmentBlock.style.backgroundColor = appointment.color;
-                appointmentBlock.style.top = `${top}px`;
-                appointmentBlock.style.height = `${height}px`;
-                
-                const startTimeStr = `${startTime.getHours().toString().padStart(2, '0')}:${startTime.getMinutes().toString().padStart(2, '0')}`;
-                const endTimeStr = `${endTime.getHours().toString().padStart(2, '0')}:${endTime.getMinutes().toString().padStart(2, '0')}`;
-                
-                appointmentBlock.innerHTML = `
-                    <div class="appointment-info">${appointment.applicant}</div>
-                    <div class="appointment-time">${startTimeStr}-${endTimeStr}</div>
-                `;
-                
-                // 找到對應的日期單元格
-                const dateStr = startTime.toISOString().split('T')[0];
-                const timeCells = document.querySelectorAll(`.time-cell[data-date="${dateStr}"]`);
-                
-                if (timeCells.length > 0) {
-                    timeCells[0].appendChild(appointmentBlock);
-                }
-            });
+            printDetails.innerHTML = `
+                <div class="print-detail-item">
+                    <div class="print-label">申請人</div>
+                    <div class="print-value">${appointment.applicant}</div>
+                </div>
+                <div class="print-detail-item">
+                    <div class="print-label">聯繫電話</div>
+                    <div class="print-value">${appointment.applicantPhone}</div>
+                </div>
+                <div class="print-detail-item">
+                    <div class="print-label">iPad數量</div>
+                    <div class="print-value">${appointment.ipadCount} 台</div>
+                </div>
+                <div class="print-detail-item">
+                    <div class="print-label">借用時間</div>
+                    <div class="print-value">${formatDateTime(start)} - ${formatDateTime(end)}</div>
+                </div>
+                <div class="print-detail-item">
+                    <div class="print-label">使用目的</div>
+                    <div class="print-value">${appointment.purpose || '未填寫'}</div>
+                </div>
+                <div class="print-detail-item">
+                    <div class="print-label">狀態</div>
+                    <div class="print-value">${statusText}</div>
+                </div>
+                <div class="print-detail-item">
+                    <div class="print-label">預約時間</div>
+                    <div class="print-value">${formatDateTime(new Date(appointment.createTime))}</div>
+                </div>
+            `;
             
-            // 更新圖例
-            updateScheduleLegend();
-            updateLastActivityTime();
+            printTime.textContent = formatDateTime(new Date());
+            
+            // 顯示打印容器並打印
+            printContainer.style.display = 'block';
+            window.print();
+            printContainer.style.display = 'none';
         }
         
-        // 更新圖例
-        function updateScheduleLegend() {
-            const legend = document.getElementById('schedule-legend');
-            legend.innerHTML = '';
+        // 處理管理員登入
+        function handleLogin(e) {
+            e.preventDefault();
             
-            const uniqueAppointments = [];
-            appointments.forEach(appointment => {
-                if (appointment.status !== 'approved') return;
-                
-                if (!uniqueAppointments.some(a => a.applicant === appointment.applicant)) {
-                    uniqueAppointments.push(appointment);
-                }
-            });
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
             
-            uniqueAppointments.forEach(appointment => {
-                const legendItem = document.createElement('div');
-                legendItem.className = 'legend-item';
-                
-                const colorBox = document.createElement('div');
-                colorBox.className = 'legend-color';
-                colorBox.style.backgroundColor = appointment.color;
-                
-                const label = document.createElement('span');
-                label.textContent = appointment.applicant;
-                
-                legendItem.appendChild(colorBox);
-                legendItem.appendChild(label);
-                legend.appendChild(legendItem);
-            });
-        }
-        
-        // 週導航
-        document.getElementById('prev-week').addEventListener('click', function() {
-            currentWeekOffset--;
-            updateScheduleView();
-        });
-        
-        document.getElementById('next-week').addEventListener('click', function() {
-            currentWeekOffset++;
-            updateScheduleView();
-        });
-        
-        // 標籤頁切換
-        document.querySelectorAll('.nav-tab').forEach(tab => {
-            tab.addEventListener('click', function() {
-                // 移除所有標籤和內容的active類
-                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                
-                // 添加active類到當前標籤和對應內容
-                this.classList.add('active');
-                const tabId = this.getAttribute('data-tab');
-                document.getElementById(`${tabId}-tab`).classList.add('active');
-                
-                // 如果是二維碼標籤，生成二維碼
-                if (tabId === 'qrcode') {
-                    generateQRCode();
-                }
+            // 簡單的驗證（實際應用中應該使用更安全的方式）
+            if (username === 'admin' && password === adminPassword) {
+                isAdminLoggedIn = true;
+                localStorage.setItem('adminLoggedIn', 'true');
                 updateLastActivityTime();
+                startLogoutTimer();
+                
+                showPage('admin-page');
+                loadAppointments();
+                
+                // 生成二維碼
+                generateQRCode();
+            } else {
+                document.getElementById('login-error').style.display = 'block';
+            }
+        }
+        
+        // 切換標籤頁
+        function switchTab(tabId) {
+            // 隱藏所有標籤內容
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
             });
-        });
+            
+            // 移除所有標籤的活動狀態
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 顯示選中的標籤內容
+            document.getElementById(`${tabId}-tab`).classList.add('active');
+            
+            // 設置選中的標籤為活動狀態
+            document.querySelector(`.nav-tab[data-tab="${tabId}"]`).classList.add('active');
+            
+            // 如果是二維碼標籤，生成二維碼
+            if (tabId === 'qrcode') {
+                generateQRCode();
+            }
+        }
         
         // 生成二維碼
         function generateQRCode() {
             const qrcodeContainer = document.getElementById('qrcode');
             qrcodeContainer.innerHTML = '';
             
-            // 生成當前頁面的URL作為二維碼內容
-            const currentUrl = window.location.href;
+            // 獲取當前頁面的URL
+            const url = window.location.href;
             
-            QRCode.toCanvas(qrcodeContainer, currentUrl, function(error) {
-                if (error) console.error(error);
+            // 生成二維碼
+            QRCode.toCanvas(url, { width: 200 }, function(err, canvas) {
+                if (err) {
+                    console.error(err);
+                    qrcodeContainer.innerHTML = '<p>生成二維碼失敗</p>';
+                    return;
+                }
+                qrcodeContainer.appendChild(canvas);
             });
-            updateLastActivityTime();
         }
         
         // 保存系統設定
-        document.getElementById('save-settings').addEventListener('click', function() {
+        function saveSettings() {
             systemSettings.advanceDays = parseInt(document.getElementById('advance-days').value);
             systemSettings.adminPhone = document.getElementById('admin-phone').value;
             
-            saveSettings();
-            alert('系統設定已保存！');
-            
-            // 更新日期輸入的最小值
-            updateDateInputMin();
-            updateLastActivityTime();
-        });
+            localStorage.setItem('systemSettings', JSON.stringify(systemSettings));
+            alert('設定已保存');
+        }
         
-        // 更新日期輸入的最小值
-        function updateDateInputMin() {
-            const today = new Date();
-            const minDate = new Date(today);
-            minDate.setDate(today.getDate() + systemSettings.advanceDays);
+        // 加載系統設定
+        function loadSettings() {
+            const savedSettings = localStorage.getItem('systemSettings');
+            if (savedSettings) {
+                systemSettings = JSON.parse(savedSettings);
+            }
             
-            const startDateInput = document.getElementById('start-date');
-            const endDateInput = document.getElementById('end-date');
-            
-            startDateInput.min = minDate.toISOString().split('T')[0];
-            endDateInput.min = minDate.toISOString().split('T')[0];
+            // 更新表單
+            document.getElementById('advance-days').value = systemSettings.advanceDays;
+            document.getElementById('admin-phone').value = systemSettings.adminPhone;
         }
         
         // 修改密碼
-        document.getElementById('change-password').addEventListener('click', function() {
+        function changePassword() {
             const currentPassword = document.getElementById('current-password').value;
             const newPassword = document.getElementById('new-password').value;
             const confirmPassword = document.getElementById('confirm-password').value;
             
             if (currentPassword !== adminPassword) {
-                alert('當前密碼錯誤！');
+                alert('當前密碼不正確');
                 return;
             }
             
             if (newPassword !== confirmPassword) {
-                alert('新密碼與確認密碼不一致！');
+                alert('新密碼與確認密碼不一致');
                 return;
             }
             
             if (newPassword.length < 6) {
-                alert('新密碼長度至少需要6位！');
+                alert('新密碼長度不能少於6位');
                 return;
             }
             
             adminPassword = newPassword;
-            localStorage.setItem('adminPassword', adminPassword);
+            localStorage.setItem('adminPassword', newPassword);
             
-            alert('密碼修改成功！');
+            alert('密碼修改成功');
+            
+            // 清空表單
             document.getElementById('current-password').value = '';
             document.getElementById('new-password').value = '';
             document.getElementById('confirm-password').value = '';
-            
-            updateLastActivityTime();
-        });
+        }
         
-        // 刷新預約數據
-        document.getElementById('refresh-appointments').addEventListener('click', function() {
-            updateAppointmentsTable();
-            alert('數據已刷新！');
-            updateLastActivityTime();
-        });
-        
-        // 關閉模態框
-        document.getElementById('close-return-modal').addEventListener('click', function() {
-            document.getElementById('return-modal').style.display = 'none';
-            updateLastActivityTime();
-        });
-        
-        document.getElementById('close-appointment-detail-modal').addEventListener('click', function() {
-            document.getElementById('appointment-detail-modal').style.display = 'none';
-            updateLastActivityTime();
-        });
-        
-        document.getElementById('close-reject-modal').addEventListener('click', function() {
-            document.getElementById('reject-modal').style.display = 'none';
-            updateLastActivityTime();
-        });
-        
-        // 點擊模態框外部關閉模態框
-        window.addEventListener('click', function(event) {
-            if (event.target === document.getElementById('return-modal')) {
-                document.getElementById('return-modal').style.display = 'none';
-                updateLastActivityTime();
-            }
-            if (event.target === document.getElementById('appointment-detail-modal')) {
-                document.getElementById('appointment-detail-modal').style.display = 'none';
-                updateLastActivityTime();
-            }
-            if (event.target === document.getElementById('reject-modal')) {
-                document.getElementById('reject-modal').style.display = 'none';
-                updateLastActivityTime();
-            }
-        });
-        
-        // 監聽用戶活動
-        document.addEventListener('click', updateLastActivityTime);
-        document.addEventListener('keypress', updateLastActivityTime);
-        document.addEventListener('scroll', updateLastActivityTime);
-        document.addEventListener('mousemove', updateLastActivityTime);
-        
-        // 初始化
-        function init() {
-            generateIpadCountOptions();
-            generateTimeOptions();
-            loadSettings();
-            updateAppointmentsTable();
-            
-            // 檢查登入狀態
-            checkLoginStatus();
-            if (isAdminLoggedIn) {
-                setupAutoLogout();
+        // 清空所有預約記錄
+        function clearAllAppointments() {
+            if (!confirm('確定要清空所有預約記錄嗎？此操作不可恢復！')) {
+                return;
             }
             
-            // 設置日期輸入的最小值
-            updateDateInputMin();
+            showLoading();
             
-            // 添加日期和時間變更事件監聽器
-            document.getElementById('start-date').addEventListener('change', updateSelectedTimeDisplay);
-            document.getElementById('start-time').addEventListener('change', updateSelectedTimeDisplay);
-            document.getElementById('end-date').addEventListener('change', updateSelectedTimeDisplay);
-            document.getElementById('end-time').addEventListener('change', updateSelectedTimeDisplay);
-            
-            // 設置開始日期變更時更新結束日期的最小值
-            document.getElementById('start-date').addEventListener('change', function() {
-                document.getElementById('end-date').min = this.value;
-                updateLastActivityTime();
+            fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'clearAllAppointments'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    appointments = [];
+                    renderAppointmentsTable();
+                    renderSchedule();
+                    alert('所有預約記錄已清空');
+                } else {
+                    alert('清空失敗: ' + data.message);
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                console.error('Error:', error);
+                alert('清空失敗，請檢查網絡連接');
             });
         }
         
-        // 頁面加載完成後初始化
+        // 顯示頁面
+        function showPage(pageId) {
+            // 隱藏所有頁面
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+            
+            // 顯示目標頁面
+            document.getElementById(pageId).classList.add('active');
+            
+            // 更新最後活動時間
+            updateLastActivityTime();
+        }
+        
+        // 格式化日期 (YYYY-MM-DD)
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+        
+        // 格式化時間 (HH:MM)
+        function formatTime(date) {
+            return date.toTimeString().slice(0, 5);
+        }
+        
+        // 格式化日期時間
+        function formatDateTime(date) {
+            return `${formatDate(date)} ${formatTime(date)}`;
+        }
+        
+        // 初始化應用
         document.addEventListener('DOMContentLoaded', init);
+        
+        // 監聽用戶活動，更新最後活動時間
+        document.addEventListener('mousemove', updateLastActivityTime);
+        document.addEventListener('keypress', updateLastActivityTime);
+        document.addEventListener('click', updateLastActivityTime);
     </script>
 </body>
 </html>
