@@ -3,260 +3,1052 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>iPad 設備借還系統（Firebase 版）</title>
+  <title>iPad設備預約系統（Firebase 版）</title>
 
-  <!-- QRCode lib -->
+  <!-- QRCode lib (用于生成二维码) -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 
-  <!-- Firebase SDKs -->
+  <!-- Firebase compat SDKs: app, database, storage -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 
   <style>
-    *{box-sizing:border-box;margin:0;padding:0;font-family:'Microsoft JhengHei',sans-serif}
+    /* ========== 基本样式（保留和兼容你原来的 UI） ========== */
+    *{box-sizing:border-box;margin:0;padding:0;font-family:'PingFang TC','Microsoft JhengHei',sans-serif}
     body{background:linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:15px}
     .container{width:100%;max-width:1000px;background:#fff;border-radius:15px;box-shadow:0 10px 30px rgba(0,0,0,.1);overflow:hidden;margin-bottom:20px}
     header{background:linear-gradient(90deg,#3498db,#2c3e50);color:#fff;padding:15px;text-align:center;position:relative}
     h1{font-size:20px;margin-bottom:8px} .subtitle{font-size:12px;opacity:.9}
     .content{padding:20px}
     .page{display:none} .active{display:block}
+
+    /* 按钮和表单 */
+    .buttons{display:flex;justify-content:space-between;margin-top:15px;gap:10px}
     button{padding:8px 14px;border-radius:6px;border:none;cursor:pointer;font-size:14px}
-    .btn-primary{background:#3498db;color:#fff} .btn-secondary{background:#e0e0e0} .btn-danger{background:#e74c3c;color:#fff} .btn-success{background:#27ae60;color:#fff}
+    .btn-primary{background:#3498db;color:#fff} .btn-secondary{background:#e0e0e0} .btn-danger{background:#e74c3c;color:#fff}
+    .btn-success{background:#27ae60;color:#fff} .btn-print{background:#7d3c98;color:#fff}
+
+    .form-group{margin-bottom:12px}
+    label{display:block;margin-bottom:6px;font-weight:600;color:#2c3e50}
+    input,select,textarea{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px}
+    input:focus,select:focus,textarea:focus{border-color:#3498db;outline:none}
+
+    .success-message{background:#d4edda;color:#155724;padding:10px;border-radius:6px;margin-bottom:10px;display:none}
+
+    /* 首页按钮 */
     .home-buttons{display:flex;flex-wrap:wrap;gap:20px;justify-content:center;margin:20px 0}
-    .home-btn{width:140px;height:140px;border-radius:50%;display:flex;flex-direction:column;justify-content:center;align-items:center;color:#fff;cursor:pointer;box-shadow:0 8px 15px rgba(0,0,0,.15)}
-    .home-btn span{font-weight:700}
-    .appointment-btn{background:linear-gradient(135deg,#3498db,#2c3e50)}
-    .view-schedule-btn{background:linear-gradient(135deg,#2ecc71,#27ae60)}
-    .return-btn{background:linear-gradient(135deg,#f39c12,#e67e22)}
-    .progress-bar{width:100%;height:6px;background:#eee;border-radius:4px;margin-top:6px;overflow:hidden}
-    .progress-bar-inner{height:100%;width:0;background:#27ae60;transition:width 0.3s}
+    .home-btn{width:140px;height:140px;border-radius:50%;display:flex;flex-direction:column;justify-content:center;align-items:center;color:#fff;cursor:pointer;box-shadow:0 8px 15px rgba(0,0,0,.15);text-align:center}
+    .home-btn i{font-size:36px;margin-bottom:8px} .home-btn span{font-weight:700}
+    .appointment-btn{background:linear-gradient(135deg,#3498db,#2c3e50)} .view-schedule-btn{background:linear-gradient(135deg,#2ecc71,#27ae60)} .return-btn{background:linear-gradient(135deg,#f39c12,#e67e22)}
+
+    /* 管理页表格 */
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{padding:10px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
+    th{background:#f8f9fa;font-weight:700;color:#2c3e50}
+
+    .status{padding:4px 8px;border-radius:12px;font-size:12px;font-weight:700}
+    .status-approved{background:#d1ecf1;color:#0c5460} .status-pending{background:#fff3cd;color:#856404}
+    .status-rejected{background:#f8d7da;color:#721c24} .status-returned{background:#d4edda;color:#155724}
+
+    /* 模态 */
+    .modal-overlay{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:2000}
+    .modal-content{background:#fff;padding:18px;border-radius:8px;width:92%;max-width:520px;max-height:85vh;overflow:auto}
+    .close-modal{background:none;border:none;font-size:20px;cursor:pointer;color:#7f8c8d}
+
+    /* 日历样式（周视图） */
+    .schedule-wrapper{border:1px solid #eaeef2;border-radius:6px;overflow:hidden}
+    .week-header{display:grid;grid-template-columns:60px repeat(7,1fr);background:#f8f9fa}
+    .week-header .time-label{padding:8px;border-right:1px solid #eaeef2;font-weight:700;text-align:center}
+    .week-header .day-cell{padding:8px;text-align:center;border-left:1px solid #eaeef2;font-weight:700}
+    /* grid 容器：自动行高30px */
+    .grid-container{position:relative;display:grid;grid-template-columns:60px repeat(7,1fr);grid-auto-rows:30px}
+    .grid-time-cell{padding:6px;text-align:right;padding-right:10px;border-bottom:1px solid #f1f4f7;border-right:1px solid #eaeef2;font-size:12px;color:#666}
+    .grid-day-cell{border-bottom:1px solid #f1f4f7;border-right:1px solid #eaeef2;position:relative}
+    /* 预约块使用 grid-row / grid-column */
+    .appointment-block{position:relative;border-radius:3px;padding:4px 6px;font-size:11px;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12);overflow:hidden}
+    .appointment-info{font-weight:700;font-size:12px}
+    .appointment-time{font-size:10px;opacity:.9}
+
+    /* 时间选项不可点击时显示灰色 */
+    select option.disabled-opt { color:#999; background:#f3f3f3; }
+    select option[disabled] { color:#999; }
+
+    /* Return UI 调整 */
+    .return-item{padding:12px;border:1px solid #e6eaee;border-radius:6px;margin-bottom:10px;background:#fbfcfd}
+    .return-item-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+    .return-item-details{font-size:13px;color:#666;margin-bottom:8px}
+    .return-actions{display:flex;gap:8px}
+    .return-photos-container{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    .thumb{width:80px;height:80px;border-radius:6px;object-fit:cover;border:1px solid #ddd}
+
+    /* 清空确认弹窗 */
+    .confirm-clear { display:flex;flex-direction:column;gap:10px }
+
+    @media (max-width:720px){
+      .home-buttons{gap:12px}
+      .home-btn{width:120px;height:120px}
+      .grid-container{grid-auto-rows:28px}
+    }
   </style>
 </head>
 <body>
-<div class="container">
-  <header>
-    <h1>iPad 設備借還系統（Firebase）</h1>
-    <div class="subtitle">便捷預約，高效管理</div>
-    <a id="admin-link" href="#" style="position:absolute;right:16px;top:16px;color:#fff;text-decoration:none;font-weight:700">管理員</a>
-  </header>
+  <div class="container">
+    <header>
+      <h1>iPad設備預約系統（Firebase）</h1>
+      <div class="subtitle">便捷預約，高效管理</div>
+      <a id="admin-link" href="#" style="position:absolute;right:16px;top:16px;color:#fff;text-decoration:none;font-weight:700">管理員</a>
+    </header>
 
-  <div class="content">
-    <!-- 首頁 -->
-    <div id="home-page" class="page active">
-      <h2>歡迎使用 iPad 借還系統</h2>
-      <div class="home-buttons">
-        <div class="home-btn appointment-btn" id="go-to-appointment"><span>設備預約</span></div>
-        <div class="home-btn view-schedule-btn" id="go-to-schedule"><span>已預約時段</span></div>
-        <div class="home-btn return-btn" id="go-to-return"><span>歸還登記</span></div>
+    <div class="content">
+      <!-- Home -->
+      <div id="home-page" class="page active">
+        <h2>歡迎使用 iPad 預約系統</h2>
+        <div class="home-buttons">
+          <div class="home-btn appointment-btn" id="go-to-appointment"><i>📱</i><span>設備預約</span></div>
+          <div class="home-btn view-schedule-btn" id="go-to-schedule"><i>📅</i><span>已預約時段</span></div>
+          <div class="home-btn return-btn" id="go-to-return"><i>📋</i><span>歸還登記</span></div>
+        </div>
+        <div style="text-align:center;color:#7f8c8d">點擊上方按鈕開始預約或管理設備</div>
+      </div>
+
+      <!-- Appointment Page -->
+      <div id="appointment-page" class="page">
+        <h2>iPad設備預約</h2>
+        <div class="success-message" id="success-message">預約已提交（如啟用審核則等待審核）</div>
+
+        <form id="appointment-form">
+          <div class="form-group">
+            <label for="applicant">申請人</label>
+            <input id="applicant" type="text" placeholder="請輸入姓名" required />
+          </div>
+
+          <div class="form-group">
+            <label for="applicant-phone">聯繫電話</label>
+            <input id="applicant-phone" type="tel" placeholder="11位手機號碼" pattern="[0-9]{11}" maxlength="11" required />
+          </div>
+
+          <div class="form-group">
+            <label for="ipad-count">申請 iPad 數量</label>
+            <select id="ipad-count" required><option value="">請選擇數量</option></select>
+          </div>
+
+          <div class="form-group">
+            <label for="purpose">使用目的</label>
+            <textarea id="purpose" rows="3" placeholder="簡要說明用途"></textarea>
+          </div>
+
+          <div class="time-selector">
+            <div class="form-group" style="display:flex;gap:12px;flex-wrap:wrap">
+              <div style="flex:1;min-width:160px">
+                <label for="start-date">開始日期</label>
+                <input id="start-date" type="date" required />
+              </div>
+              <div style="flex:1;min-width:160px">
+                <label for="start-time">開始時間</label>
+                <select id="start-time" required><option value="">請選擇開始時間</option></select>
+              </div>
+              <div style="flex:1;min-width:160px">
+                <label for="end-date">結束日期</label>
+                <input id="end-date" type="date" required />
+              </div>
+              <div style="flex:1;min-width:160px">
+                <label for="end-time">結束時間</label>
+                <select id="end-time" required><option value="">請選擇結束時間</option></select>
+              </div>
+            </div>
+            <div style="margin-top:10px;">
+              <div id="selected-time" style="font-size:14px;color:#333">未選擇時間段</div>
+              <div id="conflict-warning" style="display:none;margin-top:6px;padding:8px;background:#f8d7da;color:#721c24;border-radius:6px"></div>
+              <div id="advance-warning" style="display:none;margin-top:6px;padding:8px;background:#fff3cd;color:#856404;border-radius:6px"></div>
+            </div>
+          </div>
+
+          <div class="buttons" style="margin-top:18px">
+            <button type="button" id="back-to-home" class="btn-secondary">返回首頁</button>
+            <button type="submit" id="submit-btn" class="btn-primary">提交預約</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Schedule Page (週視圖) -->
+      <div id="schedule-page" class="page">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h2>已預約時段</h2>
+          <div style="display:flex;gap:10px;align-items:center">
+            <button id="prev-week" class="btn-secondary">←</button>
+            <div id="week-title" style="font-weight:700"></div>
+            <button id="next-week" class="btn-secondary">→</button>
+            <button id="back-to-home-from-schedule" class="btn-secondary">返回首頁</button>
+          </div>
+        </div>
+
+        <div class="schedule-wrapper">
+          <div class="week-header" id="week-header"></div>
+          <!-- grid 容器：grid-auto-rows:30px -->
+          <div id="calendar-grid" class="grid-container" style="position:relative"></div>
+        </div>
+      </div>
+
+      <!-- Return Page -->
+      <div id="return-page" class="page">
+        <h2>設備歸還登記</h2>
+        <div id="return-list" style="margin-top:12px"></div>
+        <div style="margin-top:12px">
+          <button id="back-to-home-from-return" class="btn-secondary">返回首頁</button>
+        </div>
+      </div>
+
+      <!-- Login Page -->
+      <div id="login-page" class="page">
+        <h2>管理員登入</h2>
+        <form id="login-form" style="max-width:360px;margin:10px auto">
+          <div class="form-group"><label for="username">帳號</label><input id="username" type="text" required placeholder="admin" /></div>
+          <div class="form-group"><label for="password">密碼</label><input id="password" type="password" required /></div>
+          <div id="login-error" style="display:none;color:#e74c3c;margin-bottom:8px">帳號或密碼錯誤</div>
+          <div class="buttons"><button type="button" id="back-to-home-from-login" class="btn-secondary">返回首頁</button><button type="submit" class="btn-primary">登入</button></div>
+        </form>
+      </div>
+
+      <!-- Admin Page -->
+      <div id="admin-page" class="page">
+        <h2>預約管理後台</h2>
+        <div class="nav-tabs" style="display:flex;gap:12px;border-bottom:1px solid #eaeef2;margin-bottom:12px">
+          <div class="nav-tab active" data-tab="appointments">預約記錄</div>
+          <div class="nav-tab" data-tab="settings">系統設定</div>
+          <div class="nav-tab" data-tab="password">修改密碼</div>
+          <div class="nav-tab" data-tab="qrcode">預約二維碼</div>
+        </div>
+
+        <div id="appointments-tab" class="tab-content" style="display:block">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="display:flex;gap:8px;align-items:center">
+              <button id="refresh-appointments" class="btn-primary">刷新數據</button>
+              <button id="clear-all-appointments" class="btn-danger">清空所有記錄</button>
+              <!-- 新增：顯示已歸還開關 -->
+              <label style="display:flex;align-items:center;gap:6px;margin-left:8px;font-weight:600">
+                <input type="checkbox" id="show-returned" /> 顯示已歸還
+              </label>
+            </div>
+            <div><button id="back-to-home-admin" class="btn-secondary">返回首頁</button></div>
+          </div>
+
+          <table id="appointments-table">
+            <thead><tr><th>申請人</th><th>聯繫電話</th><th>iPad數量</th><th>借用時間</th><th>狀態</th><th>操作</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div id="settings-tab" class="tab-content" style="display:none;margin-top:10px">
+          <div style="padding:12px;background:#f8f9fa;border-radius:8px">
+            <h3>預約設定</h3>
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px">
+              <label for="advance-days" style="min-width:160px">提前預約天數</label>
+              <input id="advance-days" type="number" min="0" max="30" value="3" />
+            </div>
+            <div style="margin-bottom:6px;color:#7f8c8d">設置用戶必須提前多少天進行預約（0 表示當日可預約）</div>
+
+            <div style="display:flex;gap:12px;align-items:center;margin-top:10px">
+              <label for="admin-phone" style="min-width:160px">管理員手機</label>
+              <input id="admin-phone" type="tel" placeholder="選填" />
+            </div>
+
+            <div style="margin-top:12px"><button id="save-settings" class="btn-primary">保存設定</button></div>
+          </div>
+        </div>
+
+        <div id="password-tab" class="tab-content" style="display:none;margin-top:10px">
+          <div style="padding:12px;background:#f8f9fa;border-radius:8px">
+            <h3>修改管理員密碼</h3>
+            <div class="form-group"><label for="current-password">當前密碼</label><input id="current-password" type="password" /></div>
+            <div class="form-group"><label for="new-password">新密碼</label><input id="new-password" type="password" /></div>
+            <div class="form-group"><label for="confirm-password">確認新密碼</label><input id="confirm-password" type="password" /></div>
+            <div><button id="change-password" class="btn-primary">修改密碼</button></div>
+          </div>
+        </div>
+
+        <div id="qrcode-tab" class="tab-content" style="display:none;margin-top:10px">
+          <div style="padding:12px;background:#fff;border-radius:8px">
+            <h3>掃描二維碼進行預約</h3>
+            <div id="qrcode" style="margin-top:10px"></div>
+            <div style="margin-top:10px"><button id="back-from-qrcode" class="btn-secondary">返回管理</button></div>
+          </div>
+        </div>
       </div>
     </div>
+  </div>
 
-    <!-- 預約頁 -->
-    <div id="appointment-page" class="page">
-      <h2>iPad 設備預約</h2>
-      <form id="appointment-form">
-        <label>申請人<input id="applicant" required></label>
-        <label>聯絡電話<input id="applicant-phone" required></label>
-        <label>iPad 數量<select id="ipad-count"></select></label>
-        <label>用途<textarea id="purpose"></textarea></label>
-        <label>開始時間<input type="datetime-local" id="start-time"></label>
-        <label>結束時間<input type="datetime-local" id="end-time"></label>
-        <div style="margin-top:10px"><button class="btn-primary" type="submit">提交</button><button class="btn-secondary" type="button" id="back-home1">返回</button></div>
-      </form>
-    </div>
-
-    <!-- 歸還頁 -->
-    <div id="return-page" class="page">
-      <h2>設備歸還登記</h2>
-      <div id="return-list"></div>
-      <button class="btn-secondary" id="back-home2">返回首頁</button>
-    </div>
-
-    <!-- 管理登入 -->
-    <div id="login-page" class="page">
-      <h2>管理員登入</h2>
-      <form id="login-form">
-        <label>Email<input id="login-email" type="email" required></label>
-        <label>密碼<input id="login-password" type="password" required></label>
-        <div style="margin-top:10px"><button class="btn-primary" type="submit">登入</button><button class="btn-secondary" id="back-home3" type="button">返回首頁</button></div>
-      </form>
-      <div id="login-error" style="color:#e74c3c;display:none;margin-top:8px"></div>
-    </div>
-
-    <!-- 管理頁 -->
-    <div id="admin-page" class="page">
-      <h2>預約管理</h2>
-      <button id="logout-btn" class="btn-danger">登出</button>
-      <table id="admin-table" border="1" style="width:100%;margin-top:10px;border-collapse:collapse">
-        <thead><tr><th>申請人</th><th>電話</th><th>時間</th><th>狀態</th></tr></thead>
-        <tbody></tbody>
-      </table>
+  <!-- 返回模态 -->
+  <div id="return-modal" class="modal-overlay" style="display:none">
+    <div class="modal-content">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3>設備歸還確認</h3>
+        <button class="close-modal" id="close-return-modal">×</button>
+      </div>
+      <div id="return-modal-body"></div>
     </div>
   </div>
-</div>
 
-<!-- 歸還確認模態 -->
-<div id="return-modal" class="modal-overlay" style="display:none;position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;">
-  <div class="modal-content" style="background:#fff;padding:16px;border-radius:8px;max-width:500px;width:90%">
-    <h3>設備歸還確認</h3>
-    <div id="return-modal-body"></div>
+  <!-- 預約詳情模态 -->
+  <div id="appointment-detail-modal" class="modal-overlay" style="display:none">
+    <div class="modal-content">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3>預約詳情</h3>
+        <button class="close-modal" id="close-appointment-detail-modal">×</button>
+      </div>
+      <div id="appointment-detail-body"></div>
+    </div>
   </div>
-</div>
+
+  <!-- 駁回模态 -->
+  <div id="reject-modal" class="modal-overlay" style="display:none">
+    <div class="modal-content">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3>駁回預約申請</h3>
+        <button class="close-modal" id="close-reject-modal">×</button>
+      </div>
+      <div id="reject-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- 清空确认密码模态 -->
+  <div id="clear-confirm-modal" class="modal-overlay" style="display:none">
+    <div class="modal-content">
+      <h3>請輸入確認密碼以清空所有記錄</h3>
+      <div class="confirm-clear" style="margin-top:12px">
+        <input id="clear-confirm-input" type="password" placeholder="請輸入確認密碼" />
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button id="clear-confirm-cancel" class="btn-secondary">取消</button>
+          <button id="clear-confirm-ok" class="btn-danger">確認清空</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 打印容器 -->
+  <div id="print-container" style="display:none">
+    <div id="print-details"></div>
+  </div>
 
 <script>
-/* === Firebase 初始化 === */
+/* ================== Firebase 初始化（使用你提供的配置） ================== */
 const firebaseConfig = {
   apiKey: "AIzaSyAyHaxW3X-ksmb7AZCeeGO2E2qoLjiCsB4",
   authDomain: "ipad-booking-e3a24.firebaseapp.com",
   databaseURL: "https://ipad-booking-e3a24-default-rtdb.firebaseio.com",
   projectId: "ipad-booking-e3a24",
   storageBucket: "ipad-booking-e3a24.firebasestorage.app",
+  messagingSenderId: "245625966955",
+  appId: "1:245625966955:web:fdd713996f51fe97d03c2e",
+  measurementId: "G-2Y59M64G47"
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const storage = firebase.storage();
-const auth = firebase.auth();
-const appointmentsRef = db.ref("appointments");
+const appointmentsRef = db.ref('appointments');
+const settingsRef = db.ref('settings');
 
-let currentUser = null;
-let appointments = [];
+/* ================== 本地状态 ================== */
+let appointments = []; // 从云端同步
+let systemSettings = { enableApproval:false, advanceDays:3, adminPhone:'' };
+let adminPassword = 'ipadadmin'; // 默认密码，云端 settings 覆盖后会使用云端值
+let isAdminLoggedIn = false;
+let currentWeekOffset = 0;
 
-auth.onAuthStateChanged(u=>{
-  currentUser=u;
-  if(u){showPage("admin-page");loadAppointments();}
-  else showPage("login-page");
+/* ================== 初始化 UI 选项（iPad 数量、时间） ================== */
+function generateIpadCountOptions(){
+  const sel = document.getElementById('ipad-count');
+  sel.innerHTML = '<option value="">請選擇數量</option>';
+  for (let i=1;i<=48;i++){
+    const opt = document.createElement('option'); opt.value = i; opt.textContent = i + '台';
+    sel.appendChild(opt);
+  }
+}
+function generateTimeOptions(){
+  const start = document.getElementById('start-time');
+  const end = document.getElementById('end-time');
+  start.innerHTML = '<option value="">請選擇開始時間</option>';
+  end.innerHTML = '<option value="">請選擇結束時間</option>';
+  for (let hour=8; hour<=18; hour++){
+    for (let minute of [0,10,20,30,40,50]){
+      if (hour===18 && minute>0) continue;
+      const t = `${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`;
+      const o1 = document.createElement('option'); o1.value=t; o1.textContent=t;
+      const o2 = document.createElement('option'); o2.value=t; o2.textContent=t;
+      start.appendChild(o1); end.appendChild(o2);
+    }
+  }
+}
+generateIpadCountOptions();
+generateTimeOptions();
+
+/* ================== 监听 settings（实时） ================== */
+settingsRef.on('value', snap => {
+  const data = snap.val();
+  if (data) {
+    systemSettings = Object.assign(systemSettings, data);
+    if (data.adminPassword) adminPassword = data.adminPassword;
+  } else {
+    // 如果没有 settings，写入默认设置（确保 cloud 有值）
+    settingsRef.set(systemSettings).catch(()=>{});
+  }
+  // 更新页面上 advance-days / admin-phone 控件与 date min
+  document.getElementById('advance-days').value = systemSettings.advanceDays || 0;
+  document.getElementById('admin-phone').value = systemSettings.adminPhone || '';
+  updateDateMinConstraints();
 });
 
-/* === 頁面控制 === */
-function showPage(id){
-  document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
-  document.getElementById(id).classList.add("active");
-}
-document.getElementById("go-to-appointment").onclick=()=>showPage("appointment-page");
-document.getElementById("go-to-return").onclick=()=>showPage("return-page");
-document.getElementById("go-to-schedule").onclick=()=>alert("此版本暫未啟用週曆檢視");
-document.getElementById("back-home1").onclick=document.getElementById("back-home2").onclick=document.getElementById("back-home3").onclick=()=>showPage("home-page");
-document.getElementById("admin-link").onclick=(e)=>{e.preventDefault();auth.currentUser?showPage("admin-page"):showPage("login-page");};
-document.getElementById("logout-btn").onclick=()=>auth.signOut();
+/* ================== 监听 appointments（实时） ================== */
+appointmentsRef.on('value', snap => {
+  const data = snap.val();
+  if (!data) appointments = [];
+  else appointments = Object.keys(data).map(k => {
+    const o = data[k]; o.id = o.id || k; return o;
+  });
+  updateAppointmentsTable();
+  updateReturnList();
+  updateScheduleView();
+});
 
-/* === 登入 === */
-document.getElementById("login-form").addEventListener("submit",e=>{
-  e.preventDefault();
-  const email=document.getElementById("login-email").value;
-  const pwd=document.getElementById("login-password").value;
-  auth.signInWithEmailAndPassword(email,pwd).catch(err=>{
-    document.getElementById("login-error").textContent=err.message;
-    document.getElementById("login-error").style.display="block";
+/* ================== 工具函数 ================ */
+function formatAppointmentTime(startTime, endTime){
+  const s = new Date(startTime), e = new Date(endTime);
+  const sdate = `${s.getMonth()+1}/${s.getDate()}`;
+  const st = `${String(s.getHours()).padStart(2,'0')}:${String(s.getMinutes()).padStart(2,'0')}`;
+  const et = `${String(e.getHours()).padStart(2,'0')}:${String(e.getMinutes()).padStart(2,'0')}`;
+  return `${sdate} ${st}-${et}`;
+}
+function getRandomColor(){
+  const colors = ['#3498db','#e74c3c','#2ecc71','#f39c12','#9b59b6','#1abc9c','#d35400','#34495e'];
+  return colors[Math.floor(Math.random()*colors.length)];
+}
+
+/* ================== 时间冲突与提前预约检查 ================ */
+function checkTimeConflict(startDate, startTime, endDate, endTime, ignoreId=null){
+  const s = new Date(`${startDate}T${startTime}`);
+  const e = new Date(`${endDate}T${endTime}`);
+  if (s >= e) return { conflict:true, message:'結束時間必須晚於開始時間' };
+  for (const a of appointments){
+    if (a.status !== 'approved') continue;
+    if (ignoreId && a.id === ignoreId) continue;
+    const as = new Date(a.startTime), ae = new Date(a.endTime);
+    if ((s >= as && s < ae) || (e > as && e <= ae) || (s <= as && e >= ae)){
+      return { conflict:true, message:`與 ${a.applicant} 的預約衝突 (${formatAppointmentTime(a.startTime, a.endTime)})` };
+    }
+  }
+  return { conflict:false, message:'' };
+}
+
+function checkAdvanceBooking(startDate){
+  const adv = Number(systemSettings.advanceDays || 0);
+  if (adv <= 0) return { warning:false, message:'' };
+  const today = new Date(); today.setHours(0,0,0,0);
+  const start = new Date(startDate); start.setHours(0,0,0,0);
+  const diffDays = Math.ceil((start - today) / (1000*60*60*24));
+  if (diffDays < adv) {
+    return { warning:true, message:`需提前 ${adv} 天預約，請選擇 ${adv} 天後或更晚` };
+  }
+  return { warning:false, message:'' };
+}
+
+/* ================== 日期/时间选择禁用（按 advanceDays） ================ */
+function updateDateMinConstraints(){
+  const adv = Number(systemSettings.advanceDays || 0);
+  const minDate = new Date();
+  minDate.setDate(minDate.getDate() + adv);
+  const minStr = minDate.toISOString().split('T')[0];
+  document.getElementById('start-date').min = minStr;
+  document.getElementById('end-date').min = minStr;
+  // 若当前已选日期早于 min，则清空并提示
+  ['start-date','end-date'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el.value && el.value < minStr) el.value = '';
+  });
+  // 更新时间下拉的不可选项（时间本身通常不受 advanceDays 限制，但如果用户选择了一个被禁用的日期则禁用时间选项）
+  refreshTimeOptionStates();
+}
+
+function refreshTimeOptionStates(){
+  // If selected date is earlier than allowed -> disable times; else allow.
+  const adv = Number(systemSettings.advanceDays || 0);
+  const allowedDate = new Date(); allowedDate.setDate(allowedDate.getDate() + adv);
+  const allowedStr = allowedDate.toISOString().split('T')[0];
+  // start-time / end-time: if start-date exists and is < allowedStr -> disable times
+  const sDate = document.getElementById('start-date').value;
+  const eDate = document.getElementById('end-date').value;
+  const startTimeSel = document.getElementById('start-time');
+  const endTimeSel = document.getElementById('end-time');
+
+  [startTimeSel, endTimeSel].forEach(sel => {
+    for (let i=0;i<sel.options.length;i++){
+      sel.options[i].disabled = false;
+      sel.options[i].classList.remove('disabled-opt');
+    }
+  });
+
+  if (sDate && sDate < document.getElementById('start-date').min){
+    for (let i=0;i<startTimeSel.options.length;i++){
+      startTimeSel.options[i].disabled = true;
+      startTimeSel.options[i].classList.add('disabled-opt');
+    }
+  }
+  if (eDate && eDate < document.getElementById('end-date').min){
+    for (let i=0;i<endTimeSel.options.length;i++){
+      endTimeSel.options[i].disabled = true;
+      endTimeSel.options[i].classList.add('disabled-opt');
+    }
+  }
+}
+
+/* 绑定日期/时间 change 事件 */
+['start-date','start-time','end-date','end-time'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', ()=>{
+    updateSelectedTimeDisplay();
+    refreshTimeOptionStates();
   });
 });
 
-/* === 預約提交 === */
-function fillIpadCount(){
-  const sel=document.getElementById("ipad-count");
-  sel.innerHTML="<option value=''>請選擇</option>";
-  for(let i=1;i<=48;i++){const o=document.createElement("option");o.value=i;o.text=i+"台";sel.appendChild(o);}
+/* 更新已选择时间文本并检测冲突/提前规则 */
+function updateSelectedTimeDisplay(){
+  const sd = document.getElementById('start-date').value;
+  const st = document.getElementById('start-time').value;
+  const ed = document.getElementById('end-date').value;
+  const et = document.getElementById('end-time').value;
+  const selDiv = document.getElementById('selected-time');
+  const conflictDiv = document.getElementById('conflict-warning');
+  const advDiv = document.getElementById('advance-warning');
+  if (sd && st && ed && et){
+    selDiv.textContent = `${sd} ${st} - ${ed} ${et}`;
+    const c = checkTimeConflict(sd,st,ed,et);
+    if (c.conflict){ conflictDiv.textContent = c.message; conflictDiv.style.display='block'; } else { conflictDiv.style.display='none'; }
+    const a = checkAdvanceBooking(sd);
+    if (a.warning){ advDiv.textContent = a.message; advDiv.style.display='block'; } else { advDiv.style.display='none'; }
+  } else {
+    selDiv.textContent = '未選擇時間段';
+    conflictDiv.style.display='none'; advDiv.style.display='none';
+  }
 }
-fillIpadCount();
 
-document.getElementById("appointment-form").addEventListener("submit",e=>{
+/* ================== 提交预约（写入 Firebase） ================== */
+document.getElementById('appointment-form').addEventListener('submit', function(e){
   e.preventDefault();
-  const a={
-    applicant:document.getElementById("applicant").value.trim(),
-    phone:document.getElementById("applicant-phone").value.trim(),
-    count:document.getElementById("ipad-count").value,
-    purpose:document.getElementById("purpose").value,
-    startTime:document.getElementById("start-time").value,
-    endTime:document.getElementById("end-time").value,
-    status:"approved",
-    returned:false
+  const applicant = document.getElementById('applicant').value.trim();
+  const phone = document.getElementById('applicant-phone').value.trim();
+  const count = parseInt(document.getElementById('ipad-count').value);
+  const purpose = document.getElementById('purpose').value.trim();
+  const sd = document.getElementById('start-date').value;
+  const st = document.getElementById('start-time').value;
+  const ed = document.getElementById('end-date').value;
+  const et = document.getElementById('end-time').value;
+
+  // 简单验证
+  if (!applicant || !phone || !count || !sd || !st || !ed || !et) { alert('請填寫完整'); return; }
+  if (!/^[0-9]{11}$/.test(phone)) { alert('請輸入11位手機號碼'); return; }
+  const c = checkTimeConflict(sd,st,ed,et);
+  if (c.conflict) { alert(c.message); return; }
+  const a = checkAdvanceBooking(sd);
+  if (a.warning) { alert(a.message); return; }
+
+  const newRef = appointmentsRef.push();
+  const id = newRef.key;
+  const obj = {
+    id: id,
+    applicant, phone, count: count,
+    startTime: `${sd}T${st}`,
+    endTime: `${ed}T${et}`,
+    purpose, status: systemSettings.enableApproval ? 'pending' : 'approved',
+    color: getRandomColor(),
+    returned: false,
+    returnNotes: '',
+    returnChecks: {},
+    returnPhotos: [], // will hold photo URLs after upload
+    returnTime: null,
+    timeCreated: new Date().toISOString()
   };
-  appointmentsRef.push(a).then(()=>{alert("預約已提交");showPage("home-page");});
+
+  newRef.set(obj)
+    .then(()=> {
+      document.getElementById('success-message').style.display='block';
+      setTimeout(()=>document.getElementById('success-message').style.display='none',3000);
+      document.getElementById('appointment-form').reset();
+      updateSelectedTimeDisplay();
+    })
+    .catch(err=>alert('提交失敗：' + err.message));
 });
 
-/* === 歸還列表 === */
-appointmentsRef.on("value",snap=>{
-  appointments=[];
-  const data=snap.val()||{};
-  for(let k in data){appointments.push({...data[k],id:k});}
-  renderReturnList();
-  renderAdminTable();
-});
+/* ================== 更新管理表格 ================ */
+/* 现在表格默认不显示已歸還条目；管理端可通过勾选「顯示已歸還」查看历史记录 */
+function updateAppointmentsTable(){
+  const tbody = document.querySelector('#appointments-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (!appointments || appointments.length===0){
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:12px">暫無預約記錄</td></tr>'; return;
+  }
 
-function renderReturnList(){
-  const list=document.getElementById("return-list");
-  const unreturned=appointments.filter(a=>a.status==="approved"&&!a.returned);
-  if(unreturned.length===0){list.innerHTML="<p>暫無待歸還設備</p>";return;}
-  list.innerHTML="";
-  unreturned.forEach(a=>{
-    const div=document.createElement("div");
-    div.innerHTML=`<div><b>${a.applicant}</b> (${a.count}台)</div><div>${a.phone}</div><button class="btn-success" data-id="${a.id}">歸還</button>`;
-    div.querySelector("button").onclick=()=>showReturnModal(a.id);
+  const showReturned = document.getElementById('show-returned') && document.getElementById('show-returned').checked;
+
+  // 按时间排序（开始时间）
+  const sorted = appointments.slice().sort((a,b)=> new Date(a.startTime) - new Date(b.startTime));
+  const filtered = sorted.filter(a => showReturned ? true : !a.returned);
+
+  if (filtered.length === 0){
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:12px">暫無（符合篩選條件）的預約記錄</td></tr>'; return;
+  }
+
+  filtered.forEach(a=>{
+    let statusText=''; let cls='';
+    if (a.returned){ statusText='已歸還'; cls='status-returned'; }
+    else if (a.status==='approved'){ statusText='已批准'; cls='status-approved'; }
+    else if (a.status==='pending'){ statusText='待審核'; cls='status-pending'; }
+    else if (a.status==='rejected'){ statusText='已駁回'; cls='status-rejected'; }
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${a.applicant}</td>
+      <td>${a.phone}</td>
+      <td>${a.count}台</td>
+      <td>${formatAppointmentTime(a.startTime,a.endTime)}</td>
+      <td><span class="status ${cls}">${statusText}</span></td>
+      <td>
+        <button class="btn-primary view-detail-btn" data-id="${a.id}">查看詳情</button>
+        ${(!a.returned && a.status!=='rejected') ? `<button class="btn-danger reject-btn" data-id="${a.id}">駁回</button>` : ''}
+      </td>`;
+    tbody.appendChild(tr);
+  });
+
+  // 绑定操作（先解除旧的绑定，防止重复绑定）
+  document.querySelectorAll('.view-detail-btn').forEach(btn=>{
+    btn.removeEventListener && btn.removeEventListener('click', ()=>{}); // defensive
+    btn.addEventListener('click', ()=> showAppointmentDetail(btn.getAttribute('data-id')));
+  });
+  document.querySelectorAll('.reject-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=> showRejectModal(btn.getAttribute('data-id')));
+  });
+}
+
+/* 监听 show-returned checkbox 改变 */
+const showReturnedCheckbox = document.getElementById('show-returned');
+if (showReturnedCheckbox) {
+  showReturnedCheckbox.addEventListener('change', ()=> updateAppointmentsTable());
+}
+
+/* ================== 查看詳情、打印 ================ */
+function showAppointmentDetail(id){
+  const a = appointments.find(x=>x.id===id); if(!a) return;
+  const body = document.getElementById('appointment-detail-body');
+
+  // 映射返回檢查項目鍵到中文
+  const checkLabels = {
+    deviceCount: '設備數量正確',
+    deviceCondition: '設備外觀完好',
+    accessories: '配件齊全'
+  };
+  let checksHtml = '';
+  if (a.returnChecks && typeof a.returnChecks === 'object'){
+    const checkedKeys = Object.keys(a.returnChecks).filter(k=>a.returnChecks[k]);
+    const labels = checkedKeys.map(k => checkLabels[k] || k);
+    checksHtml = labels.join('、') || '無';
+  } else {
+    checksHtml = '無';
+  }
+
+  let returnPhotosHtml = '';
+  if (a.returnPhotos && a.returnPhotos.length>0){
+    returnPhotosHtml = `<div style="margin-top:8px"><strong>歸還照片：</strong><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">` +
+      a.returnPhotos.map(url=>`<img src="${url}" style="width:120px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #ddd" />`).join('') + `</div></div>`;
+  }
+
+  body.innerHTML = `
+    <div><strong>申請人：</strong> ${a.applicant}</div>
+    <div><strong>聯繫：</strong> ${a.phone}</div>
+    <div><strong>數量：</strong> ${a.count} 台</div>
+    <div><strong>目的：</strong> ${a.purpose || '無'}</div>
+    <div><strong>時間：</strong> ${formatAppointmentTime(a.startTime,a.endTime)}</div>
+    <div><strong>狀態：</strong> ${a.returned ? '已歸還' : a.status}</div>
+    ${a.status==='rejected' && a.rejectReason ? `<div><strong>駁回原因：</strong>${a.rejectReason}</div>` : ''}
+    ${a.returned ? `<div><strong>歸還時間：</strong>${a.returnTime ? new Date(a.returnTime).toLocaleString() : '未記錄'}</div>
+      <div><strong>歸還備註：</strong>${a.returnNotes || '無'}</div>
+      <div><strong>檢查項目：</strong>${checksHtml}</div>
+      ${returnPhotosHtml}` : ''}
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+      <button id="close-detail" class="btn-secondary">關閉</button>
+      <button id="print-detail" class="btn-print" data-id="${a.id}">打印</button>
+    </div>
+  `;
+  document.getElementById('appointment-detail-modal').style.display='flex';
+  document.getElementById('close-detail').addEventListener('click', ()=> document.getElementById('appointment-detail-modal').style.display='none');
+  document.getElementById('print-detail').addEventListener('click', ()=> { printAppointment(a.id); });
+}
+function printAppointment(id){
+  const a = appointments.find(x=>x.id===id); if(!a) return;
+  let html = `<h1>預約詳情</h1>`;
+  html += `<div>申請人：${a.applicant}</div><div>聯繫：${a.phone}</div><div>數量：${a.count}台</div><div>時間：${formatAppointmentTime(a.startTime,a.endTime)}</div><div>狀態：${a.status}</div>`;
+  const w = window.open('about:blank','print');
+  w.document.write(`<html><head><title>打印</title></head><body>${html}</body></html>`);
+  w.document.close(); w.print();
+}
+
+/* ================== 駁回流程 ================ */
+function showRejectModal(id){
+  const a = appointments.find(x=>x.id===id); if(!a) return;
+  const body = document.getElementById('reject-modal-body');
+  body.innerHTML = `
+    <div><strong>申請：</strong>${a.applicant} (${a.count}台)</div>
+    <div style="margin-top:8px"><label>駁回原因</label><textarea id="reject-reason" rows="3" style="width:100%"></textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+      <button id="cancel-reject" class="btn-secondary">取消</button>
+      <button id="confirm-reject" class="btn-danger">確認駁回</button>
+    </div>
+  `;
+  document.getElementById('reject-modal').style.display='flex';
+  document.getElementById('cancel-reject').addEventListener('click', ()=> document.getElementById('reject-modal').style.display='none');
+  document.getElementById('confirm-reject').addEventListener('click', ()=>{
+    const reason = document.getElementById('reject-reason').value.trim();
+    if (!reason){ alert('請填寫原因'); return; }
+    appointmentsRef.child(id).update({ status:'rejected', rejectReason: reason }).then(()=> {
+      alert('已駁回');
+      document.getElementById('reject-modal').style.display='none';
+    }).catch(err=>alert('錯誤：'+err.message));
+  });
+}
+
+/* ================== 歸還流程（支持拍照上傳） ================ */
+function updateReturnList(){
+  const list = document.getElementById('return-list'); list.innerHTML='';
+  const pending = appointments.filter(a => a.status === 'approved' && !a.returned).sort((x,y)=> new Date(x.startTime)-new Date(y.startTime));
+  if (pending.length===0){ list.innerHTML='<p style="text-align:center;padding:18px;color:#666">暫無待歸還設備</p>'; return; }
+  pending.forEach(a=>{
+    const div = document.createElement('div'); div.className='return-item';
+    div.innerHTML = `<div class="return-item-header"><div><strong>${a.applicant}</strong></div><div>${a.count}台</div></div>
+      <div class="return-item-details">聯繫：${a.phone}<br>時間：${formatAppointmentTime(a.startTime,a.endTime)}<br>用途：${a.purpose || '無'}</div>
+      <div class="return-actions"><button class="btn-success return-btn" data-id="${a.id}">歸還登記</button></div>`;
     list.appendChild(div);
   });
+  document.querySelectorAll('.return-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=> showReturnModal(btn.getAttribute('data-id')));
+  });
 }
 
-/* === 歸還模態 === */
+/* showReturnModal 重构：使用 on* 替代 addEventListener 去避免重复绑定问题，
+   并实现文件预览/删除与上传流程的鲁棒逻辑。 */
 function showReturnModal(id){
-  const a=appointments.find(x=>x.id===id);
-  if(!a)return;
-  const body=document.getElementById("return-modal-body");
-  body.innerHTML=`
-  <p>申請人：${a.applicant}</p>
-  <label><input type="checkbox" id="chk1"> 設備數量正確</label><br>
-  <label><input type="checkbox" id="chk2"> 設備外觀完好</label><br>
-  <label><input type="checkbox" id="chk3"> 配件齊全</label>
-  <br><textarea id="return-notes" placeholder="備註" style="width:100%;margin-top:8px"></textarea>
-  <input id="return-photos" type="file" accept="image/*" multiple style="margin-top:8px"/>
-  <div class="progress-bar"><div class="progress-bar-inner" id="upload-progress"></div></div>
-  <div style="margin-top:10px"><button class="btn-success" id="confirm-return">確認歸還</button>
-  <button class="btn-secondary" id="cancel-return">取消</button></div>`;
-  document.getElementById("return-modal").style.display="flex";
+  const a = appointments.find(x=>x.id===id); if(!a) return;
+  const body = document.getElementById('return-modal-body');
+  body.innerHTML = `
+    <div><strong>申請人：</strong>${a.applicant}</div>
+    <div><strong>數量：</strong>${a.count}台</div>
+    <div style="margin-top:8px">
+      <label>檢查項目</label>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <label style="display:flex;align-items:center;gap:6px"><input id="check-device-count" type="checkbox" /> 設備數量正確</label>
+        <label style="display:flex;align-items:center;gap:6px"><input id="check-device-condition" type="checkbox" /> 設備外觀完好</label>
+        <label style="display:flex;align-items:center;gap:6px"><input id="check-accessories" type="checkbox" /> 配件齊全</label>
+      </div>
+    </div>
+    <div style="margin-top:10px"><label>歸還備註</label><textarea id="return-notes" rows="3" style="width:100%"></textarea></div>
+    <div style="margin-top:10px"><label>上傳照片（可多張）</label>
+      <input id="return-photos" type="file" accept="image/*" multiple capture="environment" style="margin-top:6px" />
+      <div id="return-photo-previews" class="return-photos-container"></div>
+      <div id="upload-progress" style="margin-top:8px;display:none">上傳中……</div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button id="cancel-return" class="btn-secondary">取消</button>
+      <button id="confirm-return" class="btn-success">確認歸還</button>
+    </div>
+  `;
+  document.getElementById('return-modal').style.display='flex';
 
-  document.getElementById("cancel-return").onclick=()=>document.getElementById("return-modal").style.display="none";
-  document.getElementById("confirm-return").onclick=async()=>{
-    if(!chk1.checked||!chk2.checked||!chk3.checked){alert("請勾選所有檢查項目");return;}
-    const notes=document.getElementById("return-notes").value;
-    const files=Array.from(document.getElementById("return-photos").files||[]);
-    const urls=[];
-    const progress=document.getElementById("upload-progress");
-    let count=0;
-    for(const f of files){
-      const path=`returns/${id}/${Date.now()}_${f.name}`;
-      const ref=storage.ref().child(path);
-      const uploadTask=ref.put(f);
-      await new Promise((res,rej)=>{
-        uploadTask.on("state_changed",snap=>{
-          progress.style.width=((++count)/files.length*100)+"%";
-        },rej,async()=>{
-          urls.push(await ref.getDownloadURL());res();
+  const photoInput = document.getElementById('return-photos');
+  const previews = document.getElementById('return-photo-previews');
+  const uploadProgress = document.getElementById('upload-progress');
+  const cancelBtn = document.getElementById('cancel-return');
+  const confirmBtn = document.getElementById('confirm-return');
+
+  // helper: render previews from current FileList
+  function renderPreviews() {
+    previews.innerHTML = '';
+    const files = Array.from(photoInput.files || []);
+    files.forEach((file, idx)=>{
+      const reader = new FileReader();
+      reader.onload = (e)=>{
+        const img = document.createElement('img'); img.src = e.target.result; img.className='thumb';
+        const wrap = document.createElement('div'); wrap.style.position='relative';
+        const del = document.createElement('button'); del.type='button'; del.textContent='×';
+        del.style.position='absolute'; del.style.right='4px'; del.style.top='4px';
+        del.style.background='rgba(0,0,0,0.5)'; del.style.color='#fff'; del.style.border='none';
+        del.style.borderRadius='50%'; del.style.width='22px'; del.style.height='22px'; del.style.cursor='pointer';
+        del.addEventListener('click', ()=>{
+          // rebuild FileList without this index
+          const dt = new DataTransfer();
+          files.forEach((f, i) => { if (i !== idx) dt.items.add(f); });
+          photoInput.files = dt.files;
+          renderPreviews();
         });
-      });
-    }
-    await appointmentsRef.child(id).update({
-      returned:true,
-      returnNotes:notes,
-      returnChecks:{deviceCount:true,deviceCondition:true,accessories:true},
-      returnPhotos:urls
+        wrap.appendChild(img); wrap.appendChild(del);
+        previews.appendChild(wrap);
+      };
+      reader.readAsDataURL(file);
     });
-    alert("歸還完成");
-    document.getElementById("return-modal").style.display="none";
+  }
+
+  // 使用 on* 事件绑定以避免多次绑定
+  photoInput.onchange = function(){
+    renderPreviews();
+  };
+
+  cancelBtn.onclick = function(){
+    document.getElementById('return-modal').style.display='none';
+  };
+
+  // 确认归还（异步上传）
+  confirmBtn.onclick = async function(){
+    // 防止重复点击
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '上傳中...';
+    uploadProgress.style.display = 'block';
+    uploadProgress.textContent = '上傳中……';
+    try {
+      const checks = { deviceCount: document.getElementById('check-device-count').checked,
+                       deviceCondition: document.getElementById('check-device-condition').checked,
+                       accessories: document.getElementById('check-accessories').checked };
+      const notes = document.getElementById('return-notes').value.trim();
+      const files = Array.from(photoInput.files || []);
+
+      // 上传照片
+      let uploadedUrls = [];
+      if (files.length > 0) {
+        for (let i = 0; i < files.length; i++){
+          const file = files[i];
+          const path = `returns/${id}/${Date.now()}_${file.name.replace(/\s/g,'_')}`;
+          const ref = storage.ref().child(path);
+          // 使用 put(file) 并等候完成
+          const snap = await ref.put(file);
+          const url = await snap.ref.getDownloadURL();
+          uploadedUrls.push(url);
+        }
+      }
+
+      // 更新 appointment
+      const updateObj = { returned:true, returnChecks:checks, returnNotes:notes, returnTime:new Date().toISOString() };
+      if (uploadedUrls.length>0) updateObj.returnPhotos = uploadedUrls;
+      await appointmentsRef.child(id).update(updateObj);
+      alert('歸還登記成功');
+      document.getElementById('return-modal').style.display='none';
+    } catch (err) {
+      console.error(err);
+      alert('歸還處理失敗：' + (err && err.message ? err.message : err));
+    } finally {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '確認歸還';
+      uploadProgress.style.display = 'none';
+    }
   };
 }
 
-/* === 管理表 === */
-function renderAdminTable(){
-  const tb=document.querySelector("#admin-table tbody");
-  tb.innerHTML="";
+/* ================== 日曆：网格渲染，使用 grid-row / grid-column 来定位预约块 ================ */
+function updateScheduleView(){
+  const cal = document.getElementById('calendar-grid');
+  const header = document.getElementById('week-header');
+  cal.innerHTML=''; header.innerHTML='';
+
+  // 计算本周起始（日曜为0）
+  const today = new Date();
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - today.getDay() + currentWeekOffset*7);
+  weekStart.setHours(0,0,0,0);
+  const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
+  document.getElementById('week-title').textContent = `${weekStart.getMonth()+1}/${weekStart.getDate()} - ${weekEnd.getMonth()+1}/${weekEnd.getDate()}`;
+
+  // header: 时间列 + 7 天
+  const timeHeader = document.createElement('div'); timeHeader.className='time-label'; timeHeader.textContent='時間';
+  header.appendChild(timeHeader);
+  for (let i=0;i<7;i++){
+    const day = new Date(weekStart); day.setDate(weekStart.getDate()+i);
+    const dCell = document.createElement('div'); dCell.className='day-cell';
+    const dayNames = ['週日','週一','週二','週三','週四','週五','週六'];
+    dCell.textContent = `${dayNames[day.getDay()]} ${day.getMonth()+1}/${day.getDate()}`;
+    header.appendChild(dCell);
+  }
+
+  // grid 基础：生成时间行（08:00 - 18:00 每 30 分）
+  const rows = [];
+  for (let hour=8; hour<=18; hour++){
+    for (let minute of [0,30]){
+      if (hour===18 && minute===30) continue;
+      const rowIndex = rows.length + 1;
+      // 时间标签列
+      const timeCell = document.createElement('div'); timeCell.className='grid-time-cell'; timeCell.style.gridColumn='1';
+      timeCell.textContent = `${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`;
+      timeCell.style.gridRow = rowIndex;
+      cal.appendChild(timeCell);
+      // 7 天的空白单元格
+      for (let d=0; d<7; d++){
+        const cell = document.createElement('div'); cell.className='grid-day-cell';
+        cell.style.gridColumn = (d+2);
+        cell.style.gridRow = rowIndex;
+        cal.appendChild(cell);
+      }
+      rows.push({hour, minute});
+    }
+  }
+
+  // 将 appointments 中的已批准项绘制为块（跨多行）
+  const rowCount = rows.length;
+  const slotsStartMinutes = 8*60; // 08:00
   appointments.forEach(a=>{
-    if(a.returned)return; // 不顯示已歸還
-    const tr=document.createElement("tr");
-    tr.innerHTML=`<td>${a.applicant}</td><td>${a.phone}</td><td>${a.startTime}~${a.endTime}</td><td>${a.status}</td>`;
-    tb.appendChild(tr);
+    // 不绘制已歸還的预约（用户要求归还后不在预约视图看到）
+    if (a.status !== 'approved' || a.returned) return;
+    const s = new Date(a.startTime);
+    const e = new Date(a.endTime);
+
+    // 如果不在本周范围则跳过
+    if (e <= weekStart || s >= new Date(weekStart.getTime() + 7*24*3600*1000)) return;
+
+    // dayIndex relative to weekStart (0..6)
+    const dayIndex = (s.getDay() + 7 - weekStart.getDay()) % 7;
+
+    const sMinutes = s.getHours()*60 + s.getMinutes();
+    const eMinutes = e.getHours()*60 + e.getMinutes();
+
+    let startRow = Math.floor((sMinutes - slotsStartMinutes) / 30) + 1;
+    let endRow = Math.ceil((eMinutes - slotsStartMinutes) / 30) + 1;
+    if (startRow < 1) startRow = 1;
+    if (endRow > rowCount+1) endRow = rowCount+1;
+
+    const block = document.createElement('div');
+    block.className = 'appointment-block';
+    block.style.gridColumn = (dayIndex + 2);
+    block.style.gridRow = `${startRow} / ${endRow}`;
+    block.style.backgroundColor = a.color || getRandomColor();
+    block.innerHTML = `<div class="appointment-info">${a.applicant}</div><div class="appointment-time">${String(s.getHours()).padStart(2,'0')}:${String(s.getMinutes()).padStart(2,'0')}-${String(e.getHours()).padStart(2,'0')}:${String(e.getMinutes()).padStart(2,'0')}</div>`;
+    // 点击查看详情
+    block.addEventListener('click', ()=> showAppointmentDetail(a.id));
+    cal.appendChild(block);
   });
 }
-function loadAppointments(){appointmentsRef.once("value");}
+
+/* ================== 管理员登录与设置 ================ */
+document.getElementById('admin-link').addEventListener('click', (e)=>{ e.preventDefault(); if (isAdminLoggedIn) showAdmin(); else showPage('login-page'); });
+
+function showAdmin(){ showPage('admin-page'); updateAppointmentsTable(); renderQRCode(); }
+
+document.getElementById('login-form').addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const user = document.getElementById('username').value.trim();
+  const pwd = document.getElementById('password').value;
+  const err = document.getElementById('login-error');
+  if (user==='admin' && pwd === adminPassword){
+    isAdminLoggedIn = true; err.style.display='none'; showAdmin();
+  } else { err.style.display='block'; }
+});
+
+document.querySelectorAll('.nav-tab').forEach(tab=>{
+  tab.addEventListener('click', function(){
+    document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+    this.classList.add('active');
+    const name = this.getAttribute('data-tab');
+    document.querySelectorAll('.tab-content').forEach(tc=>tc.style.display='none');
+    const el = document.getElementById(name + '-tab');
+    if (el) el.style.display='block';
+    // legacy qrcode tab id mapping
+    if (name==='qrcode') { document.getElementById('qrcode-tab') && (document.getElementById('qrcode-tab').style.display='block'); }
+  });
+});
+
+/* 保存设置 */
+document.getElementById('save-settings').addEventListener('click', ()=>{
+  const adv = Number(document.getElementById('advance-days').value || 0);
+  const phone = document.getElementById('admin-phone').value.trim();
+  systemSettings.advanceDays = adv;
+  systemSettings.adminPhone = phone;
+  settingsRef.update({ advanceDays: adv, adminPhone: phone }).then(()=> {
+    alert('設置已保存');
+    updateDateMinConstraints();
+  }).catch(err=>alert('保存失敗：' + err.message));
+});
+
+/* 修改管理员密码 -> 同步写入 settings.adminPassword */
+document.getElementById('change-password').addEventListener('click', ()=>{
+  const cur = document.getElementById('current-password').value;
+  const nw = document.getElementById('new-password').value;
+  const cf = document.getElementById('confirm-password').value;
+  if (cur !== adminPassword){ alert('當前密碼錯誤'); return; }
+  if (!nw || nw !== cf){ alert('新密碼不一致或為空'); return; }
+  adminPassword = nw;
+  settingsRef.update({ adminPassword: adminPassword }).then(()=> alert('密碼已修改')).catch(err=>alert('修改失敗：' + err.message));
+});
+
+/* render QRCode */
+function renderQRCode(){
+  const q = document.getElementById('qrcode');
+  q.innerHTML='';
+  QRCode.toCanvas(q, location.href, { width:200 }, function(err){});
+}
+
+/* ================== admin: 刷新、清空（清空需密码确认） ================ */
+document.getElementById('refresh-appointments').addEventListener('click', ()=>{
+  // 由于实时监听，refresh 只是拉取快照以确认无误
+  appointmentsRef.once('value').then(()=> alert('已刷新')).catch(err=>alert('刷新失敗：'+err.message));
+});
+
+const CLEAR_CONFIRM_PASSWORD = '545600';
+document.getElementById('clear-all-appointments').addEventListener('click', ()=>{
+  document.getElementById('clear-confirm-modal').style.display='flex';
+});
+document.getElementById('clear-confirm-cancel').addEventListener('click', ()=> document.getElementById('clear-confirm-modal').style.display='none');
+document.getElementById('clear-confirm-ok').addEventListener('click', ()=>{
+  const val = document.getElementById('clear-confirm-input').value;
+  if (val !== CLEAR_CONFIRM_PASSWORD){ alert('確認密碼錯誤'); return; }
+  // proceed to remove
+  appointmentsRef.remove().then(()=> {
+    alert('已清空所有預約記錄');
+    document.getElementById('clear-confirm-input').value='';
+    document.getElementById('clear-confirm-modal').style.display='none';
+  }).catch(err=>alert('操作失敗：'+err.message));
+});
+
+/* ================== 页面导航 ================== */
+document.getElementById('go-to-appointment').addEventListener('click', ()=> showPage('appointment-page'));
+document.getElementById('go-to-schedule').addEventListener('click', ()=> { showPage('schedule-page'); updateScheduleView(); });
+document.getElementById('go-to-return').addEventListener('click', ()=> { if (!isAdminLoggedIn) showPage('login-page'); else { showPage('return-page'); updateReturnList(); }});
+document.getElementById('back-to-home').addEventListener('click', ()=> showPage('home-page'));
+document.getElementById('back-to-home-from-schedule').addEventListener('click', ()=> showPage('home-page'));
+document.getElementById('back-to-home-from-return').addEventListener('click', ()=> showPage('home-page'));
+document.getElementById('back-to-home-from-login').addEventListener('click', ()=> showPage('home-page'));
+document.getElementById('back-to-home-admin').addEventListener('click', ()=> showPage('home-page'));
+document.getElementById('back-from-qrcode').addEventListener('click', ()=> renderQRCode());
+
+document.getElementById('prev-week').addEventListener('click', ()=> { currentWeekOffset--; updateScheduleView(); });
+document.getElementById('next-week').addEventListener('click', ()=> { currentWeekOffset++; updateScheduleView(); });
+
+document.getElementById('close-return-modal').addEventListener('click', ()=> document.getElementById('return-modal').style.display='none');
+document.getElementById('close-appointment-detail-modal').addEventListener('click', ()=> document.getElementById('appointment-detail-modal').style.display='none');
+document.getElementById('close-reject-modal').addEventListener('click', ()=> document.getElementById('reject-modal').style.display='none');
+
+/* ================== 删除预约（在需要处使用） ================ */
+function deleteAppointment(id){
+  if (!confirm('確定刪除此預約？')) return;
+  appointmentsRef.child(id).remove().catch(err=>alert('刪除失敗：'+err.message));
+}
+/* 暴露给全局（若需要） */
+window.deleteAppointment = deleteAppointment;
+
+/* ================== 首次约束设置 ================== */
+updateDateMinConstraints();
+updateSelectedTimeDisplay();
+updateScheduleView();
+
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+/* ================== 结束 ================== */
+/* 提示：如果你希望我接着做：
+   - 给 Storage / Database 写更严格的安全规则（以保护数据与照片）
+   - 把管理员登录改为 Firebase Authentication（更安全）
+   - 在 UI 上显示当前数据库连通性 / 上传进度
+   我可以继续帮你实现。 */
 </script>
 </body>
 </html>
