@@ -8,13 +8,12 @@
   <!-- QRCode lib (用于生成二维码) -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 
-  <!-- Firebase compat SDKs: app, database, storage -->
+  <!-- Firebase compat SDKs: app, database -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 
   <style>
-    /* ========== 基本样式（保留和兼容你原来的 UI） ========== */
+    /* ========== 基本样式 ========== */
     *{box-sizing:border-box;margin:0;padding:0;font-family:'PingFang TC','Microsoft JhengHei',sans-serif}
     body{background:linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:15px}
     .container{width:100%;max-width:1000px;background:#fff;border-radius:15px;box-shadow:0 10px 30px rgba(0,0,0,.1);overflow:hidden;margin-bottom:20px}
@@ -23,7 +22,7 @@
     .content{padding:20px}
     .page{display:none} .active{display:block}
 
-    /* 按钮和表单 */
+    /* 按钮与表单 */
     .buttons{display:flex;justify-content:space-between;margin-top:15px;gap:10px}
     button{padding:8px 14px;border-radius:6px;border:none;cursor:pointer;font-size:14px}
     .btn-primary{background:#3498db;color:#fff} .btn-secondary{background:#e0e0e0} .btn-danger{background:#e74c3c;color:#fff}
@@ -36,13 +35,13 @@
 
     .success-message{background:#d4edda;color:#155724;padding:10px;border-radius:6px;margin-bottom:10px;display:none}
 
-    /* 首页按钮 */
+    /* 首頁按鈕 */
     .home-buttons{display:flex;flex-wrap:wrap;gap:20px;justify-content:center;margin:20px 0}
     .home-btn{width:140px;height:140px;border-radius:50%;display:flex;flex-direction:column;justify-content:center;align-items:center;color:#fff;cursor:pointer;box-shadow:0 8px 15px rgba(0,0,0,.15);text-align:center}
-    .home-btn i{font-size:36px;margin-bottom:8px} .home-btn span{font-weight:700}
+    .home-btn span{font-weight:700}
     .appointment-btn{background:linear-gradient(135deg,#3498db,#2c3e50)} .view-schedule-btn{background:linear-gradient(135deg,#2ecc71,#27ae60)} .return-btn{background:linear-gradient(135deg,#f39c12,#e67e22)}
 
-    /* 管理页表格 */
+    /* 表格 */
     table{width:100%;border-collapse:collapse;margin-top:10px}
     th,td{padding:10px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
     th{background:#f8f9fa;font-weight:700;color:#2c3e50}
@@ -56,39 +55,33 @@
     .modal-content{background:#fff;padding:18px;border-radius:8px;width:92%;max-width:520px;max-height:85vh;overflow:auto}
     .close-modal{background:none;border:none;font-size:20px;cursor:pointer;color:#7f8c8d}
 
-    /* 日历样式（周视图） */
-    .schedule-wrapper{border:1px solid #eaeef2;border-radius:6px;overflow:hidden}
-    .week-header{display:grid;grid-template-columns:60px repeat(7,1fr);background:#f8f9fa}
+    /* 日曆週視圖 */
+    .schedule-wrapper{border:1px solid #eaeef2;border-radius:6px;overflow:auto} /* allow horizontal scroll on small screens */
+    .week-header{display:grid;grid-template-columns:60px repeat(7,1fr);background:#f8f9fa;align-items:center}
     .week-header .time-label{padding:8px;border-right:1px solid #eaeef2;font-weight:700;text-align:center}
-    .week-header .day-cell{padding:8px;text-align:center;border-left:1px solid #eaeef2;font-weight:700}
-    /* grid 容器：自动行高30px */
-    .grid-container{position:relative;display:grid;grid-template-columns:60px repeat(7,1fr);grid-auto-rows:30px}
+    .week-header .day-cell{padding:8px;text-align:center;border-left:1px solid #eaeef2;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .grid-container{position:relative;display:grid;grid-template-columns:60px repeat(7,1fr);grid-auto-rows:30px;min-width:760px}
     .grid-time-cell{padding:6px;text-align:right;padding-right:10px;border-bottom:1px solid #f1f4f7;border-right:1px solid #eaeef2;font-size:12px;color:#666}
     .grid-day-cell{border-bottom:1px solid #f1f4f7;border-right:1px solid #eaeef2;position:relative}
-    /* 预约块使用 grid-row / grid-column */
-    .appointment-block{position:relative;border-radius:3px;padding:4px 6px;font-size:11px;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12);overflow:hidden}
+
+    .appointment-block{position:relative;border-radius:3px;padding:4px 6px;font-size:11px;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12);overflow:hidden;cursor:pointer}
     .appointment-info{font-weight:700;font-size:12px}
     .appointment-time{font-size:10px;opacity:.9}
 
-    /* 时间选项不可点击时显示灰色 */
-    select option.disabled-opt { color:#999; background:#f3f3f3; }
-    select option[disabled] { color:#999; }
-
-    /* Return UI 调整 */
+    /* return list 项 */
     .return-item{padding:12px;border:1px solid #e6eaee;border-radius:6px;margin-bottom:10px;background:#fbfcfd}
     .return-item-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
     .return-item-details{font-size:13px;color:#666;margin-bottom:8px}
     .return-actions{display:flex;gap:8px}
-    .return-photos-container{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-    .thumb{width:80px;height:80px;border-radius:6px;object-fit:cover;border:1px solid #ddd}
-
-    /* 清空确认弹窗 */
-    .confirm-clear { display:flex;flex-direction:column;gap:10px }
 
     @media (max-width:720px){
-      .home-buttons{gap:12px}
       .home-btn{width:120px;height:120px}
-      .grid-container{grid-auto-rows:28px}
+      .grid-container{grid-auto-rows:28px;min-width:720px}
+    }
+
+    @media (max-width:480px){
+      .grid-container{min-width:640px}
+      .week-header .day-cell{font-size:12px;padding:6px}
     }
   </style>
 </head>
@@ -185,7 +178,6 @@
 
         <div class="schedule-wrapper">
           <div class="week-header" id="week-header"></div>
-          <!-- grid 容器：grid-auto-rows:30px -->
           <div id="calendar-grid" class="grid-container" style="position:relative"></div>
         </div>
       </div>
@@ -225,7 +217,6 @@
             <div style="display:flex;gap:8px;align-items:center">
               <button id="refresh-appointments" class="btn-primary">刷新數據</button>
               <button id="clear-all-appointments" class="btn-danger">清空所有記錄</button>
-              <!-- 新增：顯示已歸還開關 -->
               <label style="display:flex;align-items:center;gap:6px;margin-left:8px;font-weight:600">
                 <input type="checkbox" id="show-returned" /> 顯示已歸還
               </label>
@@ -278,7 +269,7 @@
     </div>
   </div>
 
-  <!-- 返回模态 -->
+  <!-- 返回模态（移除照片功能）-->
   <div id="return-modal" class="modal-overlay" style="display:none">
     <div class="modal-content">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -315,19 +306,14 @@
   <div id="clear-confirm-modal" class="modal-overlay" style="display:none">
     <div class="modal-content">
       <h3>請輸入確認密碼以清空所有記錄</h3>
-      <div class="confirm-clear" style="margin-top:12px">
+      <div style="margin-top:12px">
         <input id="clear-confirm-input" type="password" placeholder="請輸入確認密碼" />
-        <div style="display:flex;gap:8px;justify-content:flex-end">
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
           <button id="clear-confirm-cancel" class="btn-secondary">取消</button>
           <button id="clear-confirm-ok" class="btn-danger">確認清空</button>
         </div>
       </div>
     </div>
-  </div>
-
-  <!-- 打印容器 -->
-  <div id="print-container" style="display:none">
-    <div id="print-details"></div>
   </div>
 
 <script>
@@ -344,18 +330,17 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
-const storage = firebase.storage();
 const appointmentsRef = db.ref('appointments');
 const settingsRef = db.ref('settings');
 
 /* ================== 本地状态 ================== */
-let appointments = []; // 从云端同步
+let appointments = [];
 let systemSettings = { enableApproval:false, advanceDays:3, adminPhone:'' };
-let adminPassword = 'ipadadmin'; // 默认密码，云端 settings 覆盖后会使用云端值
+let adminPassword = 'ipadadmin';
 let isAdminLoggedIn = false;
 let currentWeekOffset = 0;
 
-/* ================== 初始化 UI 选项（iPad 数量、时间） ================== */
+/* ================== 初始化 UI 選項 ================== */
 function generateIpadCountOptions(){
   const sel = document.getElementById('ipad-count');
   sel.innerHTML = '<option value="">請選擇數量</option>';
@@ -382,23 +367,21 @@ function generateTimeOptions(){
 generateIpadCountOptions();
 generateTimeOptions();
 
-/* ================== 监听 settings（实时） ================== */
+/* ================== 監聽 settings（實時） ================== */
 settingsRef.on('value', snap => {
   const data = snap.val();
   if (data) {
     systemSettings = Object.assign(systemSettings, data);
     if (data.adminPassword) adminPassword = data.adminPassword;
   } else {
-    // 如果没有 settings，写入默认设置（确保 cloud 有值）
     settingsRef.set(systemSettings).catch(()=>{});
   }
-  // 更新页面上 advance-days / admin-phone 控件与 date min
   document.getElementById('advance-days').value = systemSettings.advanceDays || 0;
   document.getElementById('admin-phone').value = systemSettings.adminPhone || '';
   updateDateMinConstraints();
 });
 
-/* ================== 监听 appointments（实时） ================== */
+/* ================== 監聽 appointments（實時） ================== */
 appointmentsRef.on('value', snap => {
   const data = snap.val();
   if (!data) appointments = [];
@@ -410,7 +393,7 @@ appointmentsRef.on('value', snap => {
   updateScheduleView();
 });
 
-/* ================== 工具函数 ================ */
+/* ================== 工具函式 ================== */
 function formatAppointmentTime(startTime, endTime){
   const s = new Date(startTime), e = new Date(endTime);
   const sdate = `${s.getMonth()+1}/${s.getDate()}`;
@@ -423,7 +406,7 @@ function getRandomColor(){
   return colors[Math.floor(Math.random()*colors.length)];
 }
 
-/* ================== 时间冲突与提前预约检查 ================ */
+/* ================== 時間檢查與提前規則 ================== */
 function checkTimeConflict(startDate, startTime, endDate, endTime, ignoreId=null){
   const s = new Date(`${startDate}T${startTime}`);
   const e = new Date(`${endDate}T${endTime}`);
@@ -451,7 +434,7 @@ function checkAdvanceBooking(startDate){
   return { warning:false, message:'' };
 }
 
-/* ================== 日期/时间选择禁用（按 advanceDays） ================ */
+/* ================== 日期時間約束 ================== */
 function updateDateMinConstraints(){
   const adv = Number(systemSettings.advanceDays || 0);
   const minDate = new Date();
@@ -459,33 +442,23 @@ function updateDateMinConstraints(){
   const minStr = minDate.toISOString().split('T')[0];
   document.getElementById('start-date').min = minStr;
   document.getElementById('end-date').min = minStr;
-  // 若当前已选日期早于 min，则清空并提示
   ['start-date','end-date'].forEach(id=>{
     const el = document.getElementById(id);
     if (el.value && el.value < minStr) el.value = '';
   });
-  // 更新时间下拉的不可选项（时间本身通常不受 advanceDays 限制，但如果用户选择了一个被禁用的日期则禁用时间选项）
   refreshTimeOptionStates();
 }
-
 function refreshTimeOptionStates(){
-  // If selected date is earlier than allowed -> disable times; else allow.
-  const adv = Number(systemSettings.advanceDays || 0);
-  const allowedDate = new Date(); allowedDate.setDate(allowedDate.getDate() + adv);
-  const allowedStr = allowedDate.toISOString().split('T')[0];
-  // start-time / end-time: if start-date exists and is < allowedStr -> disable times
-  const sDate = document.getElementById('start-date').value;
-  const eDate = document.getElementById('end-date').value;
   const startTimeSel = document.getElementById('start-time');
   const endTimeSel = document.getElementById('end-time');
-
   [startTimeSel, endTimeSel].forEach(sel => {
     for (let i=0;i<sel.options.length;i++){
       sel.options[i].disabled = false;
       sel.options[i].classList.remove('disabled-opt');
     }
   });
-
+  const sDate = document.getElementById('start-date').value;
+  const eDate = document.getElementById('end-date').value;
   if (sDate && sDate < document.getElementById('start-date').min){
     for (let i=0;i<startTimeSel.options.length;i++){
       startTimeSel.options[i].disabled = true;
@@ -499,16 +472,12 @@ function refreshTimeOptionStates(){
     }
   }
 }
-
-/* 绑定日期/时间 change 事件 */
 ['start-date','start-time','end-date','end-time'].forEach(id=>{
   document.getElementById(id).addEventListener('change', ()=>{
     updateSelectedTimeDisplay();
     refreshTimeOptionStates();
   });
 });
-
-/* 更新已选择时间文本并检测冲突/提前规则 */
 function updateSelectedTimeDisplay(){
   const sd = document.getElementById('start-date').value;
   const st = document.getElementById('start-time').value;
@@ -529,7 +498,7 @@ function updateSelectedTimeDisplay(){
   }
 }
 
-/* ================== 提交预约（写入 Firebase） ================== */
+/* ================== 提交預約 ================== */
 document.getElementById('appointment-form').addEventListener('submit', function(e){
   e.preventDefault();
   const applicant = document.getElementById('applicant').value.trim();
@@ -541,7 +510,6 @@ document.getElementById('appointment-form').addEventListener('submit', function(
   const ed = document.getElementById('end-date').value;
   const et = document.getElementById('end-time').value;
 
-  // 简单验证
   if (!applicant || !phone || !count || !sd || !st || !ed || !et) { alert('請填寫完整'); return; }
   if (!/^[0-9]{11}$/.test(phone)) { alert('請輸入11位手機號碼'); return; }
   const c = checkTimeConflict(sd,st,ed,et);
@@ -561,7 +529,6 @@ document.getElementById('appointment-form').addEventListener('submit', function(
     returned: false,
     returnNotes: '',
     returnChecks: {},
-    returnPhotos: [], // will hold photo URLs after upload
     returnTime: null,
     timeCreated: new Date().toISOString()
   };
@@ -576,8 +543,7 @@ document.getElementById('appointment-form').addEventListener('submit', function(
     .catch(err=>alert('提交失敗：' + err.message));
 });
 
-/* ================== 更新管理表格 ================ */
-/* 现在表格默认不显示已歸還条目；管理端可通过勾选「顯示已歸還」查看历史记录 */
+/* ================== 更新管理表格 ================== */
 function updateAppointmentsTable(){
   const tbody = document.querySelector('#appointments-table tbody');
   if (!tbody) return;
@@ -587,8 +553,6 @@ function updateAppointmentsTable(){
   }
 
   const showReturned = document.getElementById('show-returned') && document.getElementById('show-returned').checked;
-
-  // 按时间排序（开始时间）
   const sorted = appointments.slice().sort((a,b)=> new Date(a.startTime) - new Date(b.startTime));
   const filtered = sorted.filter(a => showReturned ? true : !a.returned);
 
@@ -615,28 +579,20 @@ function updateAppointmentsTable(){
     tbody.appendChild(tr);
   });
 
-  // 绑定操作（先解除旧的绑定，防止重复绑定）
   document.querySelectorAll('.view-detail-btn').forEach(btn=>{
-    btn.removeEventListener && btn.removeEventListener('click', ()=>{}); // defensive
     btn.addEventListener('click', ()=> showAppointmentDetail(btn.getAttribute('data-id')));
   });
   document.querySelectorAll('.reject-btn').forEach(btn=>{
     btn.addEventListener('click', ()=> showRejectModal(btn.getAttribute('data-id')));
   });
 }
+document.getElementById('show-returned').addEventListener('change', ()=> updateAppointmentsTable());
 
-/* 监听 show-returned checkbox 改变 */
-const showReturnedCheckbox = document.getElementById('show-returned');
-if (showReturnedCheckbox) {
-  showReturnedCheckbox.addEventListener('change', ()=> updateAppointmentsTable());
-}
-
-/* ================== 查看詳情、打印 ================ */
+/* ================== 預約詳情（中文檢查項顯示） ================== */
 function showAppointmentDetail(id){
   const a = appointments.find(x=>x.id===id); if(!a) return;
   const body = document.getElementById('appointment-detail-body');
 
-  // 映射返回檢查項目鍵到中文
   const checkLabels = {
     deviceCount: '設備數量正確',
     deviceCondition: '設備外觀完好',
@@ -651,12 +607,6 @@ function showAppointmentDetail(id){
     checksHtml = '無';
   }
 
-  let returnPhotosHtml = '';
-  if (a.returnPhotos && a.returnPhotos.length>0){
-    returnPhotosHtml = `<div style="margin-top:8px"><strong>歸還照片：</strong><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">` +
-      a.returnPhotos.map(url=>`<img src="${url}" style="width:120px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #ddd" />`).join('') + `</div></div>`;
-  }
-
   body.innerHTML = `
     <div><strong>申請人：</strong> ${a.applicant}</div>
     <div><strong>聯繫：</strong> ${a.phone}</div>
@@ -667,8 +617,7 @@ function showAppointmentDetail(id){
     ${a.status==='rejected' && a.rejectReason ? `<div><strong>駁回原因：</strong>${a.rejectReason}</div>` : ''}
     ${a.returned ? `<div><strong>歸還時間：</strong>${a.returnTime ? new Date(a.returnTime).toLocaleString() : '未記錄'}</div>
       <div><strong>歸還備註：</strong>${a.returnNotes || '無'}</div>
-      <div><strong>檢查項目：</strong>${checksHtml}</div>
-      ${returnPhotosHtml}` : ''}
+      <div><strong>檢查項目：</strong>${checksHtml}</div>` : ''}
     <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
       <button id="close-detail" class="btn-secondary">關閉</button>
       <button id="print-detail" class="btn-print" data-id="${a.id}">打印</button>
@@ -687,7 +636,7 @@ function printAppointment(id){
   w.document.close(); w.print();
 }
 
-/* ================== 駁回流程 ================ */
+/* ================== 駁回流程 ================== */
 function showRejectModal(id){
   const a = appointments.find(x=>x.id===id); if(!a) return;
   const body = document.getElementById('reject-modal-body');
@@ -711,7 +660,7 @@ function showRejectModal(id){
   });
 }
 
-/* ================== 歸還流程（支持拍照上傳） ================ */
+/* ================== 歸還流程（移除照片，上傳等） ================ */
 function updateReturnList(){
   const list = document.getElementById('return-list'); list.innerHTML='';
   const pending = appointments.filter(a => a.status === 'approved' && !a.returned).sort((x,y)=> new Date(x.startTime)-new Date(y.startTime));
@@ -728,8 +677,6 @@ function updateReturnList(){
   });
 }
 
-/* showReturnModal 重构：使用 on* 替代 addEventListener 去避免重复绑定问题，
-   并实现文件预览/删除与上传流程的鲁棒逻辑。 */
 function showReturnModal(id){
   const a = appointments.find(x=>x.id===id); if(!a) return;
   const body = document.getElementById('return-modal-body');
@@ -745,11 +692,6 @@ function showReturnModal(id){
       </div>
     </div>
     <div style="margin-top:10px"><label>歸還備註</label><textarea id="return-notes" rows="3" style="width:100%"></textarea></div>
-    <div style="margin-top:10px"><label>上傳照片（可多張）</label>
-      <input id="return-photos" type="file" accept="image/*" multiple capture="environment" style="margin-top:6px" />
-      <div id="return-photo-previews" class="return-photos-container"></div>
-      <div id="upload-progress" style="margin-top:8px;display:none">上傳中……</div>
-    </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
       <button id="cancel-return" class="btn-secondary">取消</button>
       <button id="confirm-return" class="btn-success">確認歸還</button>
@@ -757,82 +699,21 @@ function showReturnModal(id){
   `;
   document.getElementById('return-modal').style.display='flex';
 
-  const photoInput = document.getElementById('return-photos');
-  const previews = document.getElementById('return-photo-previews');
-  const uploadProgress = document.getElementById('upload-progress');
-  const cancelBtn = document.getElementById('cancel-return');
-  const confirmBtn = document.getElementById('confirm-return');
-
-  // helper: render previews from current FileList
-  function renderPreviews() {
-    previews.innerHTML = '';
-    const files = Array.from(photoInput.files || []);
-    files.forEach((file, idx)=>{
-      const reader = new FileReader();
-      reader.onload = (e)=>{
-        const img = document.createElement('img'); img.src = e.target.result; img.className='thumb';
-        const wrap = document.createElement('div'); wrap.style.position='relative';
-        const del = document.createElement('button'); del.type='button'; del.textContent='×';
-        del.style.position='absolute'; del.style.right='4px'; del.style.top='4px';
-        del.style.background='rgba(0,0,0,0.5)'; del.style.color='#fff'; del.style.border='none';
-        del.style.borderRadius='50%'; del.style.width='22px'; del.style.height='22px'; del.style.cursor='pointer';
-        del.addEventListener('click', ()=>{
-          // rebuild FileList without this index
-          const dt = new DataTransfer();
-          files.forEach((f, i) => { if (i !== idx) dt.items.add(f); });
-          photoInput.files = dt.files;
-          renderPreviews();
-        });
-        wrap.appendChild(img); wrap.appendChild(del);
-        previews.appendChild(wrap);
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  // 使用 on* 事件绑定以避免多次绑定
-  photoInput.onchange = function(){
-    renderPreviews();
-  };
-
-  cancelBtn.onclick = function(){
+  document.getElementById('cancel-return').onclick = function(){
     document.getElementById('return-modal').style.display='none';
   };
 
-  // 确认归还（异步上传）
-  confirmBtn.onclick = async function(){
-    // 防止重复点击
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = '上傳中...';
-    uploadProgress.style.display = 'block';
-    uploadProgress.textContent = '上傳中……';
+  document.getElementById('confirm-return').onclick = async function(){
+    // 防止重複點擊
+    const btn = document.getElementById('confirm-return');
+    btn.disabled = true; btn.textContent = '處理中...';
     try {
       const checks = { deviceCount: document.getElementById('check-device-count').checked,
                        deviceCondition: document.getElementById('check-device-condition').checked,
                        accessories: document.getElementById('check-accessories').checked };
       const notes = document.getElementById('return-notes').value.trim();
-      const files = Array.from(photoInput.files || []);
-
-// 上传照片
-let uploadedUrls = [];
-if (files.length > 0) {
-  const storageRoot = firebase.storage().ref();
-
-  for (let i = 0; i < files.length; i++){
-    const file = files[i];
-    const filePath = `returns/${id}/${Date.now()}_${file.name.replace(/\s/g,'_')}`;
-    const fileRef = storageRoot.child(filePath);
-
-    // 这是唯一在 iPad Safari 100% 成功的写法
-    const snapshot = await fileRef.put(file);
-    const downloadURL = await fileRef.getDownloadURL();
-    uploadedUrls.push(downloadURL);
-        }
-      }
-
-      // 更新 appointment
+      // 直接標記為已歸還（最終狀態）
       const updateObj = { returned:true, returnChecks:checks, returnNotes:notes, returnTime:new Date().toISOString() };
-      if (uploadedUrls.length>0) updateObj.returnPhotos = uploadedUrls;
       await appointmentsRef.child(id).update(updateObj);
       alert('歸還登記成功');
       document.getElementById('return-modal').style.display='none';
@@ -840,20 +721,17 @@ if (files.length > 0) {
       console.error(err);
       alert('歸還處理失敗：' + (err && err.message ? err.message : err));
     } finally {
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = '確認歸還';
-      uploadProgress.style.display = 'none';
+      btn.disabled = false; btn.textContent = '確認歸還';
     }
   };
 }
 
-/* ================== 日曆：网格渲染，使用 grid-row / grid-column 来定位预约块 ================ */
+/* ================== 行事曆：週視圖渲染（手機支援水平滾動） ================ */
 function updateScheduleView(){
   const cal = document.getElementById('calendar-grid');
   const header = document.getElementById('week-header');
   cal.innerHTML=''; header.innerHTML='';
 
-  // 计算本周起始（日曜为0）
   const today = new Date();
   const weekStart = new Date(today);
   weekStart.setDate(today.getDate() - today.getDay() + currentWeekOffset*7);
@@ -861,7 +739,7 @@ function updateScheduleView(){
   const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
   document.getElementById('week-title').textContent = `${weekStart.getMonth()+1}/${weekStart.getDate()} - ${weekEnd.getMonth()+1}/${weekEnd.getDate()}`;
 
-  // header: 时间列 + 7 天
+  // header 行：時間列 + 7 天
   const timeHeader = document.createElement('div'); timeHeader.className='time-label'; timeHeader.textContent='時間';
   header.appendChild(timeHeader);
   for (let i=0;i<7;i++){
@@ -872,21 +750,22 @@ function updateScheduleView(){
     header.appendChild(dCell);
   }
 
-  // grid 基础：生成时间行（08:00 - 18:00 每 30 分）
+  // grid 時間列（08:00 - 18:00 每 30 分）
   const rows = [];
   for (let hour=8; hour<=18; hour++){
     for (let minute of [0,30]){
       if (hour===18 && minute===30) continue;
       const rowIndex = rows.length + 1;
-      // 时间标签列
-      const timeCell = document.createElement('div'); timeCell.className='grid-time-cell'; timeCell.style.gridColumn='1';
+      // time label cell
+      const timeCell = document.createElement('div'); timeCell.className='grid-time-cell';
       timeCell.textContent = `${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`;
+      timeCell.style.gridColumn = '1';
       timeCell.style.gridRow = rowIndex;
       cal.appendChild(timeCell);
-      // 7 天的空白单元格
+      // 7 day cells
       for (let d=0; d<7; d++){
         const cell = document.createElement('div'); cell.className='grid-day-cell';
-        cell.style.gridColumn = (d+2);
+        cell.style.gridColumn = String(d+2);
         cell.style.gridRow = rowIndex;
         cal.appendChild(cell);
       }
@@ -894,21 +773,20 @@ function updateScheduleView(){
     }
   }
 
-  // 将 appointments 中的已批准项绘制为块（跨多行）
   const rowCount = rows.length;
   const slotsStartMinutes = 8*60; // 08:00
+
+  // draw appointment blocks (approved and not returned)
   appointments.forEach(a=>{
-    // 不绘制已歸還的预约（用户要求归还后不在预约视图看到）
     if (a.status !== 'approved' || a.returned) return;
     const s = new Date(a.startTime);
     const e = new Date(a.endTime);
 
-    // 如果不在本周范围则跳过
+    // skip if outside this week
     if (e <= weekStart || s >= new Date(weekStart.getTime() + 7*24*3600*1000)) return;
 
-    // dayIndex relative to weekStart (0..6)
-    const dayIndex = (s.getDay() + 7 - weekStart.getDay()) % 7;
-
+    // day index from weekStart (0-6)
+    const dayIndex = Math.floor((s.getTime() - weekStart.getTime()) / (24*3600*1000));
     const sMinutes = s.getHours()*60 + s.getMinutes();
     const eMinutes = e.getHours()*60 + e.getMinutes();
 
@@ -919,19 +797,17 @@ function updateScheduleView(){
 
     const block = document.createElement('div');
     block.className = 'appointment-block';
-    block.style.gridColumn = (dayIndex + 2);
+    block.style.gridColumn = String(dayIndex + 2);
     block.style.gridRow = `${startRow} / ${endRow}`;
     block.style.backgroundColor = a.color || getRandomColor();
     block.innerHTML = `<div class="appointment-info">${a.applicant}</div><div class="appointment-time">${String(s.getHours()).padStart(2,'0')}:${String(s.getMinutes()).padStart(2,'0')}-${String(e.getHours()).padStart(2,'0')}:${String(e.getMinutes()).padStart(2,'0')}</div>`;
-    // 点击查看详情
     block.addEventListener('click', ()=> showAppointmentDetail(a.id));
     cal.appendChild(block);
   });
 }
 
-/* ================== 管理员登录与设置 ================ */
+/* ================== 管理員登入與設定 ================ */
 document.getElementById('admin-link').addEventListener('click', (e)=>{ e.preventDefault(); if (isAdminLoggedIn) showAdmin(); else showPage('login-page'); });
-
 function showAdmin(){ showPage('admin-page'); updateAppointmentsTable(); renderQRCode(); }
 
 document.getElementById('login-form').addEventListener('submit', (e)=>{
@@ -943,7 +819,6 @@ document.getElementById('login-form').addEventListener('submit', (e)=>{
     isAdminLoggedIn = true; err.style.display='none'; showAdmin();
   } else { err.style.display='block'; }
 });
-
 document.querySelectorAll('.nav-tab').forEach(tab=>{
   tab.addEventListener('click', function(){
     document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
@@ -952,12 +827,8 @@ document.querySelectorAll('.nav-tab').forEach(tab=>{
     document.querySelectorAll('.tab-content').forEach(tc=>tc.style.display='none');
     const el = document.getElementById(name + '-tab');
     if (el) el.style.display='block';
-    // legacy qrcode tab id mapping
-    if (name==='qrcode') { document.getElementById('qrcode-tab') && (document.getElementById('qrcode-tab').style.display='block'); }
   });
 });
-
-/* 保存设置 */
 document.getElementById('save-settings').addEventListener('click', ()=>{
   const adv = Number(document.getElementById('advance-days').value || 0);
   const phone = document.getElementById('admin-phone').value.trim();
@@ -968,8 +839,6 @@ document.getElementById('save-settings').addEventListener('click', ()=>{
     updateDateMinConstraints();
   }).catch(err=>alert('保存失敗：' + err.message));
 });
-
-/* 修改管理员密码 -> 同步写入 settings.adminPassword */
 document.getElementById('change-password').addEventListener('click', ()=>{
   const cur = document.getElementById('current-password').value;
   const nw = document.getElementById('new-password').value;
@@ -979,20 +848,16 @@ document.getElementById('change-password').addEventListener('click', ()=>{
   adminPassword = nw;
   settingsRef.update({ adminPassword: adminPassword }).then(()=> alert('密碼已修改')).catch(err=>alert('修改失敗：' + err.message));
 });
-
-/* render QRCode */
 function renderQRCode(){
   const q = document.getElementById('qrcode');
   q.innerHTML='';
   QRCode.toCanvas(q, location.href, { width:200 }, function(err){});
 }
 
-/* ================== admin: 刷新、清空（清空需密码确认） ================ */
+/* ================== 管理功能：刷新、清空 ================== */
 document.getElementById('refresh-appointments').addEventListener('click', ()=>{
-  // 由于实时监听，refresh 只是拉取快照以确认无误
   appointmentsRef.once('value').then(()=> alert('已刷新')).catch(err=>alert('刷新失敗：'+err.message));
 });
-
 const CLEAR_CONFIRM_PASSWORD = '545600';
 document.getElementById('clear-all-appointments').addEventListener('click', ()=>{
   document.getElementById('clear-confirm-modal').style.display='flex';
@@ -1001,7 +866,6 @@ document.getElementById('clear-confirm-cancel').addEventListener('click', ()=> d
 document.getElementById('clear-confirm-ok').addEventListener('click', ()=>{
   const val = document.getElementById('clear-confirm-input').value;
   if (val !== CLEAR_CONFIRM_PASSWORD){ alert('確認密碼錯誤'); return; }
-  // proceed to remove
   appointmentsRef.remove().then(()=> {
     alert('已清空所有預約記錄');
     document.getElementById('clear-confirm-input').value='';
@@ -1009,7 +873,7 @@ document.getElementById('clear-confirm-ok').addEventListener('click', ()=>{
   }).catch(err=>alert('操作失敗：'+err.message));
 });
 
-/* ================== 页面导航 ================== */
+/* ================== 導航 & 其他綁定 ================== */
 document.getElementById('go-to-appointment').addEventListener('click', ()=> showPage('appointment-page'));
 document.getElementById('go-to-schedule').addEventListener('click', ()=> { showPage('schedule-page'); updateScheduleView(); });
 document.getElementById('go-to-return').addEventListener('click', ()=> { if (!isAdminLoggedIn) showPage('login-page'); else { showPage('return-page'); updateReturnList(); }});
@@ -1027,15 +891,14 @@ document.getElementById('close-return-modal').addEventListener('click', ()=> doc
 document.getElementById('close-appointment-detail-modal').addEventListener('click', ()=> document.getElementById('appointment-detail-modal').style.display='none');
 document.getElementById('close-reject-modal').addEventListener('click', ()=> document.getElementById('reject-modal').style.display='none');
 
-/* ================== 删除预约（在需要处使用） ================ */
+/* ================== 刪除預約（若需） ================== */
 function deleteAppointment(id){
   if (!confirm('確定刪除此預約？')) return;
   appointmentsRef.child(id).remove().catch(err=>alert('刪除失敗：'+err.message));
 }
-/* 暴露给全局（若需要） */
 window.deleteAppointment = deleteAppointment;
 
-/* ================== 首次约束设置 ================== */
+/* ================== 首次初始化 ================== */
 updateDateMinConstraints();
 updateSelectedTimeDisplay();
 updateScheduleView();
@@ -1045,13 +908,6 @@ function showPage(id){
   const el = document.getElementById(id);
   if (el) el.classList.add('active');
 }
-
-/* ================== 结束 ================== */
-/* 提示：如果你希望我接着做：
-   - 给 Storage / Database 写更严格的安全规则（以保护数据与照片）
-   - 把管理员登录改为 Firebase Authentication（更安全）
-   - 在 UI 上显示当前数据库连通性 / 上传进度
-   我可以继续帮你实现。 */
 </script>
 </body>
 </html>
