@@ -813,17 +813,20 @@ function showReturnModal(id){
       const notes = document.getElementById('return-notes').value.trim();
       const files = Array.from(photoInput.files || []);
 
-      // 上传照片
-      let uploadedUrls = [];
-      if (files.length > 0) {
-        for (let i = 0; i < files.length; i++){
-          const file = files[i];
-          const path = `returns/${id}/${Date.now()}_${file.name.replace(/\s/g,'_')}`;
-          const ref = storage.ref().child(path);
-          // 使用 put(file) 并等候完成
-          const snap = await ref.put(file);
-          const url = await snap.ref.getDownloadURL();
-          uploadedUrls.push(url);
+// 上传照片
+let uploadedUrls = [];
+if (files.length > 0) {
+  const storageRoot = firebase.storage().ref();
+
+  for (let i = 0; i < files.length; i++){
+    const file = files[i];
+    const filePath = `returns/${id}/${Date.now()}_${file.name.replace(/\s/g,'_')}`;
+    const fileRef = storageRoot.child(filePath);
+
+    // 这是唯一在 iPad Safari 100% 成功的写法
+    const snapshot = await fileRef.put(file);
+    const downloadURL = await fileRef.getDownloadURL();
+    uploadedUrls.push(downloadURL);
         }
       }
 
